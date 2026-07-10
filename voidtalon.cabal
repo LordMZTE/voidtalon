@@ -1,0 +1,53 @@
+cabal-version:       2.2
+
+name:                voidtalon
+version:             0.1.0.0
+homepage:            https://git.mzte.de/LordMZTE/voidtalon
+license:             GPL-3.0-or-later
+license-file:        LICENSE
+author:              LordMZTE
+maintainer:          lord@mzte.de
+build-type:          Simple
+extra-source-files:  README.md
+
+executable vt
+  other-modules:
+      CLI
+      Config
+      TUI
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:
+      , aeson
+      , base
+      , brick
+      , bytestring
+      , containers
+      , directory
+      , filepath
+      , http-client
+      , microlens
+      , microlens-mtl
+      , microlens-th
+      , optparse-applicative
+      , text
+      , text-zipper
+      , toml-parser
+      , vty
+  ghc-options: -Wall
+               -Wcompat
+               -Widentities
+               -Wincomplete-record-updates
+               -Wincomplete-uni-patterns
+               -Wincomplete-patterns
+               -Wmissing-export-lists
+               -Wmissing-home-modules
+               -Wpartial-fields
+               -Wredundant-constraints
+               -- Needed for Brick
+               -threaded
+
+source-repository head
+  type:     git
+  location: https://git.mzte.de/LordMZTE/voidtalon
