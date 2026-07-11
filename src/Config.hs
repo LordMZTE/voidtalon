@@ -1,14 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 
-module Config (Config (..), ConnectionConfig (..), parseConfig, findDefaultPath) where
+module Config (Config (..), TomlURI (..), ConnectionConfig (..), parseConfig, findDefaultPath) where
 
-import Data.Text (Text)
+import qualified Data.Text as T
 import GHC.Generics
+import Network.URI (URI, parseURI)
 import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
 import System.FilePath ((</>))
 import Toml
 import Toml.Schema
+import Toml.Schema.FromValue (typeError)
 
 data Config = Config
   { connection :: ConnectionConfig
@@ -16,13 +18,21 @@ data Config = Config
   deriving (Generic)
   deriving (FromValue) via GenericTomlTable Config
 
+newtype TomlURI = TomlURI {getTomlURI :: URI}
+
+instance FromValue TomlURI where
+  fromValue (Text' ann txt) = case parseURI $ T.unpack txt of
+    Just uri -> pure $ TomlURI uri
+    Nothing -> failAt ann "invalid URL"
+  fromValue v = typeError "URI" v
+
 data ConnectionConfig = ConnectionConfig
-  { base_url :: String
+  { base_url :: TomlURI
   }
   deriving (Generic)
   deriving (FromValue) via GenericTomlTable ConnectionConfig
 
-parseConfig :: Text -> Result String Config
+parseConfig :: T.Text -> Result String Config
 parseConfig = decode
 
 findDefaultPath :: IO FilePath

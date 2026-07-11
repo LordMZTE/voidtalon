@@ -14,6 +14,7 @@ executable vt
   other-modules:
       CLI
       Config
+      Net
       TUI
   hs-source-dirs:      src
   main-is:             Main.hs
@@ -30,6 +31,7 @@ executable vt
       , microlens
       , microlens-mtl
       , microlens-th
+      , network-uri
       , optparse-applicative
       , text
       , text-zipper

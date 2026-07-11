@@ -5,17 +5,18 @@
 module TUI (app, mkInitialState, App', State (..), Event (..), Name (..)) where
 
 import Brick
+import Brick.BChan (BChan)
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
 import Config (Config)
+import Control.Monad.IO.Class (liftIO)
 import qualified Data.Text as T
 import Data.Text.Zipper (clearZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH
-import Control.Monad.IO.Class (liftIO)
 
 data Event = PlaceholderEvent
 
@@ -23,6 +24,7 @@ data Name = PromptField deriving (Eq, Ord, Show)
 
 data State = State
   { _config :: Config,
+    _evchan :: BChan Event,
     _focus :: FocusRing Name,
     _outputText :: T.Text,
     _promptEditor :: Editor T.Text Name
@@ -34,10 +36,11 @@ makeLenses ''State
 promptLines :: Maybe Int
 promptLines = Just 8
 
-mkInitialState :: Config -> State
-mkInitialState _config =
+mkInitialState :: Config -> BChan Event -> State
+mkInitialState _config _evchan =
   State
     { _config,
+      _evchan,
       _focus = focusRing [PromptField],
       _outputText = "test",
       _promptEditor = editorText PromptField promptLines ""
