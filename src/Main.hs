@@ -34,7 +34,8 @@ main = do
       mapM_ (hPutStrLn stderr) warns
       pure conf
   chan <- newBChan 32
-  (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app $ TUI.mkInitialState config
+  initState <- TUI.mkInitialState config chan
+  (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app initState
   Vty.shutdown vty
 
 readConfig :: FilePath -> IO Text

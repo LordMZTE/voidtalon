@@ -15,6 +15,7 @@ executable vt
       CLI
       Config
       Net
+      Net.Completions
       TUI
   hs-source-dirs:      src
   main-is:             Main.hs
@@ -28,6 +29,7 @@ executable vt
       , directory
       , filepath
       , http-client
+      , http-types
       , microlens
       , microlens-mtl
       , microlens-th
