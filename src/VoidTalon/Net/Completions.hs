@@ -4,7 +4,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Net.Completions (perform, Context (..), contextEncoding, Update (..), CompletionChoice (..)) where
+module VoidTalon.Net.Completions (perform, Context (..), contextEncoding, Update (..), CompletionChoice (..)) where
 
 import Control.Applicative (Alternative (empty))
 import Control.Concurrent (forkIO)

@@ -1,0 +1,2 @@
+module VoidTalon.Net () where
+

@@ -1,11 +1,11 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module Main (main) where
+module VoidTalon.Main (main) where
 
 import Brick.BChan (newBChan)
 import Brick.Main (customMainWithDefaultVty)
-import qualified CLI
-import qualified Config
+import qualified VoidTalon.CLI as CLI
+import qualified VoidTalon.Config as Config
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
@@ -17,7 +17,7 @@ import Data.Text.Encoding (decodeUtf8)
 import qualified Graphics.Vty as Vty
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
-import qualified TUI
+import qualified VoidTalon.TUI as TUI
 import Toml.Schema (Result (Failure, Success))
 
 main :: IO ()

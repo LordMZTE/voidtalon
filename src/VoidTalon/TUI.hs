@@ -3,14 +3,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module TUI (app, mkInitialState, App', State (..), Event (..)) where
+module VoidTalon.TUI (app, mkInitialState, App', State (..), Event (..)) where
 
 import Brick
 import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
-import Config (Config (connection), ConnectionConfig (base_url), TomlURI (getTomlURI))
+import VoidTalon.Config (Config (connection), ConnectionConfig (base_url), TomlURI (getTomlURI))
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (IORef, newIORef, readIORef)
@@ -19,8 +19,7 @@ import Data.Text.Zipper (clearZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.TH
-import qualified Net.Completions
-import Net.Completions (Context (..))
+import qualified VoidTalon.Net.Completions as Completions
 import qualified Network.HTTP.Client as HTTP
 
 data Event = EvGetText T.Text
@@ -90,11 +89,11 @@ handleEvent ev = do
         when (not running') $ do
           modify $ applyEdit clearZipper
           let ctx =
-                Context
-                  { prompt = mconcat $ getEditContents $ st ^. promptEditor
+                Completions.Context
+                  { Completions.prompt = mconcat $ getEditContents $ st ^. promptEditor
                   }
           liftIO $
-            Net.Completions.perform
+            Completions.perform
               (writeBChan (st ^. evchan) . EvGetText . (.deltaContent) . (.delta))
               (st ^. config).connection.base_url.getTomlURI
               (st ^. httpMan)

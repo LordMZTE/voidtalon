@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 
-module Config (Config (..), TomlURI (..), ConnectionConfig (..), parseConfig, findDefaultPath) where
+module VoidTalon.Config (Config (..), TomlURI (..), ConnectionConfig (..), parseConfig, findDefaultPath) where
 
 import qualified Data.Text as T
 import GHC.Generics

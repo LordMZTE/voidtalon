@@ -1,4 +1,4 @@
-module CLI (Arguments (..), parser, readArguments) where
+module VoidTalon.CLI (Arguments (..), parser, readArguments) where
 
 import Options.Applicative
 

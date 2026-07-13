@@ -12,13 +12,13 @@ extra-source-files:  README.md
 
 executable vt
   other-modules:
-      CLI
-      Config
-      Net
-      Net.Completions
-      TUI
+      VoidTalon.CLI
+      VoidTalon.Config
+      VoidTalon.Net
+      VoidTalon.Net.Completions
+      VoidTalon.TUI
   hs-source-dirs:      src
-  main-is:             Main.hs
+  main-is:             VoidTalon/Main.hs
   default-language:    Haskell2010
   build-depends:
       , aeson
@@ -51,6 +51,7 @@ executable vt
                -Wredundant-constraints
                -- Needed for Brick
                -threaded
+               -main-is VoidTalon.Main
 
 source-repository head
   type:     git
