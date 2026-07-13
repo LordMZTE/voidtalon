@@ -10,7 +10,6 @@ import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
-import VoidTalon.Config (Config (connection), ConnectionConfig (base_url), TomlURI (getTomlURI))
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (IORef, newIORef, readIORef)
@@ -19,12 +18,13 @@ import Data.Text.Zipper (clearZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.TH
-import qualified VoidTalon.Net.Completions as Completions
 import qualified Network.HTTP.Client as HTTP
+import VoidTalon.Config (Config (connection), ConnectionConfig (base_url), TomlURI (getTomlURI))
+import qualified VoidTalon.Net.Completions as Completions
 
 data Event = EvGetText T.Text
 
-data Name = NPromptField | NOutputViewport deriving (Eq, Ord, Show)
+data Name = NPromptField | NOutputVP deriving (Eq, Ord, Show)
 
 data State = State
   { _config :: Config,
@@ -69,16 +69,36 @@ app =
       appAttrMap = const $ attrMap V.defAttr []
     }
 
+outputVPScroll :: ViewportScroll Name
+outputVPScroll = viewportScroll NOutputVP
+
 draw :: State -> [Widget Name]
 draw st = [vBox [output, hBorder, (joinBorders prompt)]]
   where
-    output = withVScrollBars OnRight $ viewport NOutputViewport Vertical $ txtWrap $ st ^. outputText
+    output = withVScrollBars OnRight $ viewport NOutputVP Vertical $ txtWrap $ st ^. outputText
     prompt = withFocusRing (st ^. focus) (renderEditor (txt . T.unlines)) $ st ^. promptEditor
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
+-- Exit with <C-q>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
+-- Scroll with <C-e> and <C-y>
+handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy outputVPScroll 1
+handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy outputVPScroll $ -1
 -- TODO: <> on ByteString is slow (O(n)), optimize
-handleEvent (AppEvent (EvGetText added)) = zoom outputText $ modify (<> added)
+handleEvent (AppEvent (EvGetText added)) = do
+  -- append text to output
+  zoom outputText $ modify (<> added)
+  -- stick to bottom
+  maybeVP <- lookupViewport NOutputVP
+  case maybeVP of
+    Just vp ->
+      let top = vp ^. vpTop
+          (_, vpHeight) = vp ^. vpSize
+          (_, contentHeight) = vp ^. vpContentSize
+          visCols = contentHeight - top
+          isAtBottom = visCols <= vpHeight
+       in when isAtBottom $ vScrollToEnd outputVPScroll
+    Nothing -> pure ()
 handleEvent ev = do
   st <- get
   case focusGetCurrent $ st ^. focus of
@@ -94,7 +114,11 @@ handleEvent ev = do
                   }
           liftIO $
             Completions.perform
-              (writeBChan (st ^. evchan) . EvGetText . (.deltaContent) . (.delta))
+              ( writeBChan (st ^. evchan)
+                  . EvGetText
+                  . (\(Completions.CompletionChoice dr dc) -> dr <> dc)
+                  . (.delta)
+              )
               (st ^. config).connection.base_url.getTomlURI
               (st ^. httpMan)
               (st ^. running)
