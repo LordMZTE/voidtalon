@@ -7,7 +7,6 @@ module VoidTalon.Net.Completions
     Context (..),
     contextEncoding,
     Update (..),
-    CompletionChoice (..),
   )
 where
 
@@ -37,6 +36,8 @@ import Network.HTTP.Client
 import Network.HTTP.Types (statusIsSuccessful)
 import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
+import VoidTalon.Timeline (LLMMessage (..))
+import qualified VoidTalon.Timeline as Timeline
 
 perform ::
   -- | Consumer that will be called with incoming updates
@@ -100,30 +101,39 @@ perform evchan uri http running ctx = do
     mkCtxRequestBody = encodingToLazyByteString . contextEncoding
 
 data Context = Context
-  { prompt :: T.Text
+  { timeline :: [Timeline.Entry]
   }
 
 -- We don't specify a ToJSON instance because that would require us to also implement `toJSON`,
 -- causing code duplication and no advantage
 contextEncoding :: Context -> Encoding
-contextEncoding Context {prompt} =
+contextEncoding Context {timeline} =
   pairs
     ( "stream" .= True
         <> pair
           ("messages" :: Key)
           ( list
               id
-              [ pairs ("role" .= ("user" :: T.Text) <> "content" .= prompt)
-              ]
+              $ encodeEntry <$> timeline
+              -- [ pairs ("role" .= ("user" :: T.Text) <> "content" .= prompt)
+              -- ]
           )
     )
+  where
+    encodeEntry (Timeline.PromptEntry p) = pairs ("role" .= ("user" :: T.Text) <> "content" .= p)
+    encodeEntry (Timeline.OutputEntry (LLMMessage {reasoning, content})) =
+      pairs
+        ( "role" .= ("user" :: T.Text)
+            <> "reasoning_content" .= reasoning
+            <> "content" .= content
+        )
 
 data Update = Update
-  { delta :: CompletionChoice
+  { delta :: LLMMessage
   }
 
 updateFromRaw :: RawUpdate -> Update
-updateFromRaw RawUpdate {choices} = Update {delta = mconcat choices}
+updateFromRaw RawUpdate {choices} = Update {delta = mconcat $ (.inner) <$> choices}
 
 data RawUpdate = RawUpdate
   { choices :: [CompletionChoice]
@@ -135,21 +145,14 @@ instance FromJSON RawUpdate where
       <$> v .: "choices"
   parseJSON _ = empty
 
-data CompletionChoice = CompletionChoice
-  { deltaReasoning :: T.Text,
-    deltaContent :: T.Text
-  }
+newtype CompletionChoice = CompletionChoice {inner :: LLMMessage}
 
 instance FromJSON CompletionChoice where
   parseJSON (Object v) = do
     d <- v .: "delta"
     CompletionChoice
-      <$> d .:? "reasoning_content" .!= ""
-      <*> d .:? "content" .!= ""
+      <$> ( LLMMessage
+              <$> d .:? "reasoning_content" .!= ""
+              <*> d .:? "content" .!= ""
+          )
   parseJSON _ = empty
-
-instance Semigroup CompletionChoice where
-  (CompletionChoice aR aC) <> (CompletionChoice bR bC) = CompletionChoice (aR <> bR) (aC <> bC)
-
-instance Monoid CompletionChoice where
-  mempty = CompletionChoice "" ""

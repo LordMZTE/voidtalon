@@ -1,24 +1,27 @@
-module VoidTalon.TUI.Timeline (Entry (..), entryWidget) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module VoidTalon.TUI.Timeline (entryWidget, draw) where
 
 import Brick
 import Brick.Widgets.Border
 import qualified Data.Text as T
+import VoidTalon.TUI.Types (Name (..))
 import qualified VoidTalon.TUI.Types as TT
-import VoidTalon.Net.Completions (CompletionChoice(..))
-
-data Entry
-  = PromptEntry T.Text
-  | OutputEntry CompletionChoice
+import qualified VoidTalon.Timeline as TL
 
 messagePadding :: Padding
 messagePadding = Pad 3
 
-entryWidget :: Entry -> Widget TT.Name
-entryWidget (PromptEntry p) = padLeft messagePadding $ border $ txtWrap p
-entryWidget (OutputEntry (CompletionChoice reasoning reply)) =
-  padRight messagePadding $ if T.null reasoning
-    then replyWidget
-    else reasoningWidget <=> replyWidget
+entryWidget :: TL.Entry -> Widget TT.Name
+entryWidget (TL.PromptEntry p) = padLeft messagePadding $ border $ txtWrap p
+entryWidget (TL.OutputEntry (TL.LLMMessage reasoning reply)) =
+  padRight messagePadding $
+    if T.null reasoning
+      then replyWidget
+      else reasoningWidget <=> replyWidget
   where
-    reasoningWidget = borderWithLabel (str "Reasoning") $ txtWrap reasoning
+    reasoningWidget = borderWithLabel (txt "Reasoning") $ txtWrap reasoning
     replyWidget = txtWrap reply
+
+draw :: [TL.Entry] -> Widget TT.Name
+draw = withVScrollBars OnRight . viewport NOutputVP Vertical . vBox . foldl (flip $ (:) . entryWidget) []

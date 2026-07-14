@@ -19,6 +19,7 @@ executable vt
       VoidTalon.TUI
       VoidTalon.TUI.Timeline
       VoidTalon.TUI.Types
+      VoidTalon.Timeline
   hs-source-dirs:      src
   main-is:             VoidTalon/Main.hs
   default-language:    Haskell2010

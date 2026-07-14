@@ -1,6 +1,6 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
 
 module VoidTalon.TUI
   ( app,
@@ -27,12 +27,9 @@ import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
 import qualified VoidTalon.Net.Completions as Completions
-import VoidTalon.TUI.Types
 import qualified VoidTalon.TUI.Timeline as Timeline
-
--- | Number of lines our prompt will have at most.
-promptLines :: Maybe Int
-promptLines = Just 8
+import VoidTalon.TUI.Types
+import qualified VoidTalon.Timeline as Timeline
 
 data State = State
   { config :: Config,
@@ -60,7 +57,7 @@ mkInitialState config evchan = do
       { config,
         evchan,
         focus = focusRing [NPromptField],
-        promptEditor = editorText NPromptField promptLines "",
+        promptEditor = editorText NPromptField Nothing "",
         running = running',
         httpMan = httpMan',
         timeline = []
@@ -84,11 +81,12 @@ outputVPScroll = viewportScroll NOutputVP
 draw :: State -> [Widget Name]
 draw st = [vBox [output, hBorder, (joinBorders prompt)]]
   where
-    output = withVScrollBars OnRight
-      $ viewport NOutputVP Vertical
-      $ vBox
-      $ foldl (flip $ (:) . Timeline.entryWidget) [] st.timeline
-    prompt = withFocusRing st.focus (renderEditor (txt . T.unlines)) $ st.promptEditor
+    output = Timeline.draw st.timeline
+    prompt =
+      withFocusRing
+        st.focus
+        (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
+        $ st.promptEditor
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -100,8 +98,8 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy outputVPScr
 handleEvent (AppEvent (EvGetCompletions added)) = do
   -- append text to output
   zoom stateTimelineL $ modify $ \case
-    (Timeline.OutputEntry prev):tl -> (Timeline.OutputEntry (prev <> added)):tl
-    tl -> (Timeline.OutputEntry added):tl
+    (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
+    tl -> (Timeline.OutputEntry added) : tl
   -- stick to bottom
   maybeVP <- lookupViewport NOutputVP
   case maybeVP of
@@ -127,10 +125,7 @@ handleEvent ev = do
           -- append prompt to timeline
           zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
           -- start completions request
-          let ctx =
-                Completions.Context
-                  { Completions.prompt = prompt
-                  }
+          ctx <- zoom stateTimelineL $ (Completions.Context . reverse) <$> get
           liftIO $
             Completions.perform
               ( writeBChan (st.evchan)

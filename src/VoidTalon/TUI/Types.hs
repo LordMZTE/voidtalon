@@ -4,8 +4,8 @@ module VoidTalon.TUI.Types
   )
 where
 
-import VoidTalon.Net.Completions (CompletionChoice)
+import VoidTalon.Timeline (LLMMessage)
 
-data Event = EvGetCompletions CompletionChoice
+data Event = EvGetCompletions LLMMessage
 data Name = NPromptField | NOutputVP deriving (Eq, Ord, Show)
 
