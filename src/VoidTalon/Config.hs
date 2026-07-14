@@ -18,7 +18,7 @@ data Config = Config
   deriving (Generic)
   deriving (FromValue) via GenericTomlTable Config
 
-newtype TomlURI = TomlURI {getTomlURI :: URI}
+newtype TomlURI = TomlURI {inner :: URI}
 
 instance FromValue TomlURI where
   fromValue (Text' ann txt) = case parseURI $ T.unpack txt of

@@ -17,6 +17,8 @@ executable vt
       VoidTalon.Net
       VoidTalon.Net.Completions
       VoidTalon.TUI
+      VoidTalon.TUI.Timeline
+      VoidTalon.TUI.Types
   hs-source-dirs:      src
   main-is:             VoidTalon/Main.hs
   default-language:    Haskell2010
@@ -47,11 +49,16 @@ executable vt
                -Wincomplete-patterns
                -Wmissing-export-lists
                -Wmissing-home-modules
-               -Wpartial-fields
                -Wredundant-constraints
+
+               -main-is VoidTalon.Main
+
                -- Needed for Brick
                -threaded
-               -main-is VoidTalon.Main
+  default-extensions:
+    OverloadedRecordDot
+    NamedFieldPuns
+    NoFieldSelectors
 
 source-repository head
   type:     git

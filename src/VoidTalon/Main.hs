@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module VoidTalon.Main (main) where
 
 import Brick.BChan (newBChan)
