@@ -16,7 +16,7 @@ import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (IORef, newIORef, readIORef)
 import qualified Data.Text as T
@@ -117,11 +117,11 @@ handleEvent ev = do
     Just NPromptField -> case ev of
       -- TODO: we don't get shift in the modifiers here when the user presses shift-enter!  Bad!
       (VtyEvent (V.EvKey V.KEnter [])) -> do
-        running' <- liftIO $ readIORef $ st.running
-        when (not running') $ do
+        running <- liftIO $ readIORef $ st.running
+        let prompt = mconcat $ getEditContents $ st.promptEditor
+        unless (running || T.null prompt) $ do
           -- clear entry
           zoom statePromptEditorL $ modify $ applyEdit clearZipper
-          let prompt = mconcat $ getEditContents $ st.promptEditor
           -- append prompt to timeline
           zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
           -- start completions request
