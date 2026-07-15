@@ -14,9 +14,11 @@ executable vt
   other-modules:
       VoidTalon.CLI
       VoidTalon.Config
+      VoidTalon.Markdown
       VoidTalon.Net
       VoidTalon.Net.Completions
       VoidTalon.TUI
+      VoidTalon.TUI.Markdown
       VoidTalon.TUI.Timeline
       VoidTalon.TUI.Types
       VoidTalon.Timeline
@@ -28,6 +30,7 @@ executable vt
       , base
       , brick
       , bytestring
+      , commonmark
       , containers
       , directory
       , filepath
@@ -38,6 +41,7 @@ executable vt
       , microlens-th
       , network-uri
       , optparse-applicative
+      , skylighting
       , text
       , text-zipper
       , toml-parser

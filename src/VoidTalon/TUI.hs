@@ -16,7 +16,7 @@ import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
-import Control.Monad (when, unless)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (IORef, newIORef, readIORef)
 import qualified Data.Text as T
@@ -72,7 +72,12 @@ app =
       appChooseCursor = focusRingCursor (.focus),
       appHandleEvent = handleEvent,
       appStartEvent = pure (),
-      appAttrMap = const $ attrMap V.defAttr []
+      appAttrMap =
+        const $
+          attrMap
+            V.defAttr
+            [ (warningA, fg V.yellow)
+            ]
     }
 
 outputVPScroll :: ViewportScroll Name
