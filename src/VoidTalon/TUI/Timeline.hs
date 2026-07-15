@@ -14,14 +14,19 @@ messagePadding :: Padding
 messagePadding = Pad 3
 
 entryWidget :: TL.Entry -> Widget TT.Name
-entryWidget (TL.PromptEntry p) = padLeft messagePadding $ border $ markdownWidget "prompt" p
+entryWidget (TL.PromptEntry p) =
+  -- This double padding is to align the widget to the right and provide spacing on the left.
+  padLeft Max
+    . padLeft messagePadding
+    . border
+    $ markdownWidget "prompt" p
 entryWidget (TL.OutputEntry (TL.LLMMessage reasoning reply)) =
   padRight messagePadding $
     if T.null reasoning
       then replyWidget
       else reasoningWidget <=> replyWidget
   where
-    reasoningWidget = borderWithLabel (txt "Reasoning") $ txtWrap reasoning
+    reasoningWidget = borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
     replyWidget = markdownWidget "reply" reply
 
 draw :: [TL.Entry] -> Widget TT.Name

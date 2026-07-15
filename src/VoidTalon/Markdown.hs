@@ -9,6 +9,7 @@ import qualified Data.Text as T
 data Inline
   = InlineEmpty
   | InlineConcat Inline Inline
+  | InlineBreak
   | InlineText T.Text
   | InlineCode T.Text
   | InlineEmph Inline
@@ -37,7 +38,7 @@ instance C.HasAttributes Inline where
   addAttributes _ = id
 
 instance C.IsInline Inline where
-  lineBreak = InlineText $ T.singleton '\n'
+  lineBreak = InlineBreak
   softBreak = C.lineBreak
   str = InlineText
   entity = C.str -- No idea what this is
