@@ -19,7 +19,7 @@ import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Text as T
-import Data.Text.Zipper (clearZipper)
+import Data.Text.Zipper (breakLine, clearZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.TH (makeLensesFor)
@@ -129,7 +129,10 @@ handleEvent ev = do
   st <- get
   case focusGetCurrent $ st.focus of
     Just NPromptField -> case ev of
-      -- TODO: we don't get shift in the modifiers here when the user presses shift-enter!  Bad!
+      -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
+      -- supported by vty.
+      (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
+        zoom statePromptEditorL $ modify $ applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) -> do
         let running = isNothing st.stopReason
         let prompt = mconcat $ getEditContents $ st.promptEditor
