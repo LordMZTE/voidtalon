@@ -98,7 +98,9 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         st.focus
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
-    statusBar = withAttr barA . padLeft Max . txt $ fromMaybe "running" st.stopReason
+    statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
+    statusBarRight = txt $ fromMaybe "running" st.stopReason
+    statusBarLeft = txt "<C-q> Quit | <C-e/y> Scl | <M-Cr> Ins. NL"
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
