@@ -6,7 +6,6 @@ module VoidTalon.TUI
   ( app,
     mkInitialState,
     State (..),
-    Event (..),
     module VoidTalon.TUI.Types,
   )
 where
@@ -26,6 +25,7 @@ import Lens.Micro
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
+import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
 import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
@@ -43,12 +43,14 @@ data State = State
     timeline :: [Timeline.Entry],
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
-    model :: ModelInfo
+    model :: ModelInfo,
+    runStatus :: T.Text
   }
 
 makeLensesFor
   [ ("promptEditor", "statePromptEditorL"),
-    ("timeline", "stateTimelineL")
+    ("timeline", "stateTimelineL"),
+    ("runStatus", "stateRunStatusL")
   ]
   ''State
 
@@ -64,7 +66,8 @@ mkInitialState config evchan httpMan model = do
         focus = focusRing [NPromptField],
         promptEditor = editorText NPromptField Nothing "",
         running = running',
-        timeline = []
+        timeline = [],
+        runStatus = "stop"
       }
 
 type App' = App State Event Name
@@ -80,7 +83,8 @@ app =
         const $
           attrMap
             V.defAttr
-            [ (warningA, fg V.yellow)
+            [ (warningA, fg V.yellow),
+              (barA, V.magenta `on` (V.Color240 $ 235 - 16))
             ]
     }
 
@@ -88,7 +92,7 @@ outputVPScroll :: ViewportScroll Name
 outputVPScroll = viewportScroll NOutputVP
 
 draw :: State -> [Widget Name]
-draw st = [vBox [output, hBorder, (joinBorders prompt)]]
+draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
   where
     output = Timeline.draw st.timeline
     prompt =
@@ -96,6 +100,7 @@ draw st = [vBox [output, hBorder, (joinBorders prompt)]]
         st.focus
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
+    statusBar = withAttr barA $ padLeft Max $ txt st.runStatus
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -104,7 +109,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
 handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy outputVPScroll 1
 handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy outputVPScroll $ -1
 -- TODO: <> on ByteString is slow (O(n)), optimize
-handleEvent (AppEvent (EvGetCompletions added)) = do
+handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
   -- append text to output
   zoom stateTimelineL $ modify $ \case
     (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
@@ -120,6 +125,8 @@ handleEvent (AppEvent (EvGetCompletions added)) = do
           isAtBottom = visCols <= vpHeight
        in when isAtBottom $ vScrollToEnd outputVPScroll
     Nothing -> pure ()
+handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) =
+  zoom stateRunStatusL $ put reason
 handleEvent ev = do
   st <- get
   case focusGetCurrent $ st.focus of
@@ -131,15 +138,19 @@ handleEvent ev = do
         unless (running || T.null prompt) $ do
           -- clear entry
           zoom statePromptEditorL $ modify $ applyEdit clearZipper
+
           -- append prompt to timeline
           zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
+
+          -- set runStatus to running
+          zoom stateRunStatusL $ put "running"
+
           -- start completions request
           ctx <- zoom stateTimelineL $ (Completions.Context st.model.id . reverse) <$> get
           liftIO $
             Completions.perform
               ( writeBChan (st.evchan)
-                  . EvGetCompletions
-                  . (.delta)
+                  . EvCompletionUpdate
               )
               (st.config).connection.base_url.inner
               (st.httpMan)

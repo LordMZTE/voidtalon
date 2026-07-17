@@ -33,10 +33,12 @@ import Network.HTTP.Client
   )
 import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
+import System.Directory.Internal.Prelude (fromMaybe)
 import System.FilePath ((</>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
 import qualified VoidTalon.Timeline as Timeline
+import VoidTalon.Util (untab)
 
 perform ::
   -- | Consumer that will be called with incoming updates
@@ -83,7 +85,7 @@ perform evchan uri http running ctx = do
     processLine "data: [DONE]" = pure () -- completely useless terminator line
     processLine (LBS.stripPrefix "data:" -> Just l) = do
       case decode l of
-        Just p -> evchan $ updateFromRaw p
+        Just p -> updateFromRaw p
         Nothing -> pure () -- parse error
     processLine _ = pure () -- garbage
     handleResponse :: Response BodyReader -> IO ()
@@ -94,6 +96,13 @@ perform evchan uri http running ctx = do
 
     mkCtxRequestBody :: Context -> LBS.ByteString
     mkCtxRequestBody = encodingToLazyByteString . contextEncoding
+
+    updateFromRaw :: RawUpdate -> IO ()
+    updateFromRaw RawUpdate {choices} =
+      sequence_ $
+        choices <&> \ch -> do
+          fromMaybe (pure ()) $ (evchan . UpdateMessage) <$> ch.message
+          fromMaybe (pure ()) $ (evchan . UpdateStop) <$> ch.stop
 
 data Context = Context
   { -- | Model to use
@@ -126,15 +135,12 @@ contextEncoding Context {model, timeline} =
             <> "content" .= content
         )
 
-data Update = Update
-  { delta :: LLMMessage
-  }
-
-updateFromRaw :: RawUpdate -> Update
-updateFromRaw RawUpdate {choices} = Update {delta = mconcat $ (.inner) <$> choices}
+data Update
+  = UpdateMessage {delta :: LLMMessage}
+  | UpdateStop {reason :: T.Text}
 
 data RawUpdate = RawUpdate
-  { choices :: [CompletionChoice]
+  { choices :: [Choice]
   }
 
 instance FromJSON RawUpdate where
@@ -143,22 +149,19 @@ instance FromJSON RawUpdate where
       <$> v .: "choices"
   parseJSON _ = mempty
 
-newtype CompletionChoice = CompletionChoice {inner :: LLMMessage}
+data Choice = Choice {stop :: Maybe T.Text, message :: Maybe LLMMessage}
 
-instance FromJSON CompletionChoice where
+instance FromJSON Choice where
   parseJSON (Object v) = do
-    d <- v .: "delta"
-    CompletionChoice
-      <$> ( LLMMessage
-              <$> (untab <$> d .:? "reasoning_content" .!= "")
-              <*> (untab <$> d .:? "content" .!= "")
+    Choice
+      <$> ((untab <$>) <$> v .:? "finish_reason")
+      <*> ( v .:? "delta"
+              >>= sequence
+                . fmap
+                  ( \d ->
+                      LLMMessage
+                        <$> (untab <$> d .:? "reasoning_content" .!= "")
+                        <*> (untab <$> d .:? "content" .!= "")
+                  )
           )
-    where
-      -- | Replaces all tabs with four spaces.  We do this because feeding tabs to VTY causes
-      -- breakage, and it's cheapest to do here where all strings are still short.
-      --
-      -- Note that in rare cases, this breaks syntax highlighting with formats that are picky with
-      -- spaces and tabs.  Try to make the AI generate a makefile, and you'll get what I mean.
-      untab :: T.Text -> T.Text
-      untab = T.replace "\t" "    "
   parseJSON _ = mempty
