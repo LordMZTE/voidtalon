@@ -20,6 +20,7 @@ import Graphics.Vty
     MaybeDefault (Default, KeepCurrent),
     blue,
     bold,
+    currentAttr,
     defAttr,
     horizCat,
     imageHeight,
@@ -74,8 +75,14 @@ inlineWidgetWith attr inl = lineWrapWidget . splitLines $ segs attr inl
 lineWrapWidget :: [[Image]] -> Widget a
 lineWrapWidget lineImages = Widget Greedy Fixed $ do
   c <- getContext
-  let img = vertCat $ horizCat <$> (concatMap (wordWrap imageWidth c.availWidth) lineImages)
+  let img = vertCat $ lineImage <$> (concatMap (wordWrap imageWidth c.availWidth) lineImages)
   pure $ Result img [] [] [] BorderMap.empty
+  where
+    -- Concats multiple images to an image, but doesn't turn the empty line to an empty image, but
+    -- rather a text image with no characters in order to create an empty line.
+    lineImage :: [Image] -> Image
+    lineImage [] = text' currentAttr ""
+    lineImage imgs = horizCat imgs
 
 -- | Like words, but keeps spaces
 splitSpace :: T.Text -> [T.Text]
