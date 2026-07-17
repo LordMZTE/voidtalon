@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module VoidTalon.TUI.Markdown (inlineWidget, docWidget, markdownWidget, wordWrap) where
 
@@ -7,15 +8,19 @@ import qualified Brick.BorderMap as BorderMap
 import Brick.Widgets.Border (borderWithLabel, hBorder)
 import Commonmark (ListType (BulletList, OrderedList))
 import Commonmark.Parser (commonmark)
-import Data.List (groupBy)
-import Data.Maybe (catMaybes, isJust)
+import Data.Bits ((.|.))
+import Data.List (groupBy, singleton)
+import qualified Data.Map as Map
+import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Text as T
 import Graphics.Vty
-  ( Attr (attrBackColor, attrForeColor, attrURL),
-    Color (Color240),
+  ( Attr (..),
+    Color (Color240, RGBColor),
+    Image,
+    MaybeDefault (Default, KeepCurrent),
     blue,
     bold,
-    currentAttr,
+    defAttr,
     horizCat,
     imageHeight,
     imageWidth,
@@ -26,6 +31,7 @@ import Graphics.Vty
     withStyle,
   )
 import Graphics.Vty.Attributes (MaybeDefault (SetTo))
+import qualified Skylighting as SL
 import VoidTalon.Markdown as M
 import qualified VoidTalon.TUI.Types as TT
 
@@ -49,13 +55,7 @@ linkAttr url a =
     underline
 
 inlineWidgetWith :: Attr -> M.Inline -> Widget a
-inlineWidgetWith attr inl = Widget Greedy Fixed $ do
-  c <- getContext
-  let img =
-        vertCat $
-          horizCat
-            <$> (concatMap (wrap c.availWidth) $ splitLines $ segs attr inl)
-  pure $ Result img [] [] [] BorderMap.empty
+inlineWidgetWith attr inl = lineWrapWidget . splitLines $ segs attr inl
   where
     -- We use Just to mean a span of text, and Nothing to mean a line break.
     segs _ InlineEmpty = []
@@ -67,12 +67,15 @@ inlineWidgetWith attr inl = Widget Greedy Fixed $ do
     segs a (InlineStrong t) = segs (strongAttr a) t
     segs a (InlineLink _ dest _ t) = segs (linkAttr dest a) t
 
-    -- Small wrapper around wordWrap that prevents our code from stripping empty lines.
-    wrap _ [] = [[]]
-    wrap width ws = wordWrap imageWidth width ws
-
     splitLines :: [Maybe a] -> [[a]]
     splitLines = fmap catMaybes . groupBy (flip $ const . isJust)
+
+-- | Given a list of lines of Images, returns a widget that renders these lines with wrapping.
+lineWrapWidget :: [[Image]] -> Widget a
+lineWrapWidget lineImages = Widget Greedy Fixed $ do
+  c <- getContext
+  let img = vertCat $ horizCat <$> (concatMap (wordWrap imageWidth c.availWidth) lineImages)
+  pure $ Result img [] [] [] BorderMap.empty
 
 -- | Like words, but keeps spaces
 splitSpace :: T.Text -> [T.Text]
@@ -82,7 +85,7 @@ splitSpace = T.groupBy group
     group _ _ = True
 
 inlineWidget :: M.Inline -> Widget a
-inlineWidget = inlineWidgetWith currentAttr
+inlineWidget = inlineWidgetWith defAttr
 
 docWidget :: M.Doc -> Widget a
 docWidget = vBox . widgs
@@ -103,9 +106,12 @@ docWidget = vBox . widgs
               <$> zip [start ..] xs
     widgs (DocHeading depth t) =
       [ str (take depth (repeat '#') <> " ")
-          <+> inlineWidgetWith (withStyle currentAttr underline) t
+          <+> inlineWidgetWith (withStyle defAttr underline) t
       ]
-    widgs (DocCodeBlock lang t) = [borderWithLabel (txt lang) $ txtWrap t] -- TODO syntax hl
+    widgs (DocCodeBlock lang t) = singleton $
+      case SL.lookupSyntax lang SL.defaultSyntaxMap of
+        Just syntax -> uncurry borderWithLabel $ highlightedCode syntax t
+        Nothing -> borderWithLabel (txt lang) $ txtWrap t -- Unknown language
     widgs (DocQuote t) = pure $ Widget hInner vInner $ do
       c <- getContext
       resInner <-
@@ -130,16 +136,98 @@ markdownWidget docname input = case commonmark docname input of
 -- If a non-empty list is given, we always return at least one element per line.  This might lead to
 -- the line overflowing, but we have no way of splitting words, so that's just gonna be how it is.
 wordWrap :: (Num n, Ord n) => (a -> n) -> n -> [a] -> [[a]]
-wordWrap f len ws =
-  case linePair 0 ws of
-    -- If we got an empty list, we had one word that was too long for the line.
-    ([], w : ws') -> [w] : (wordWrap f len ws')
-    (l, []) -> [l]
-    (l, ls) -> l : (wordWrap f len ls)
+wordWrap _ _ [] = [[]] -- Avoid trimming empty lines
+wordWrap f len ws = inner ws
   where
+    inner ws' = case linePair 0 ws' of
+      -- If we got an empty list, we had one word that was too long for the line.
+      ([], w : ws'') -> [w] : (inner ws'')
+      (l, []) -> [l]
+      (l, ls) -> l : (inner ls)
     linePair _ [] = ([], [])
     linePair n xs@(x : xs') =
       let newLen = n + f x
        in if newLen > len
             then ([], xs)
             else let (ys, zs) = linePair newLen xs' in (x : ys, zs)
+
+highlightedCode ::
+  SL.Syntax ->
+  T.Text ->
+  -- | (header, body)
+  (Widget a, Widget a)
+highlightedCode syntax t = (txt syntax.sName,) $ case tokResult of
+  Left _ -> txtWrap t -- Error, fallback to unhighlighted text
+  Right sourceLines -> lineWrapWidget $ (tokImage <$>) <$> sourceLines
+  where
+    tokCfg =
+      SL.TokenizerConfig
+        { SL.syntaxMap = SL.defaultSyntaxMap, -- no idea what this is even needed for
+          SL.traceOutput = False
+        }
+    tokResult = SL.tokenize tokCfg syntax t
+
+    tokImage (ttyp, text) = text' (ttypeAttr ttyp) text
+
+    ttypeAttr ttyp =
+      fromMaybe defAttr $ slStyleToVTY <$> catppuccinMocha.tokenStyles Map.!? ttyp
+
+    slStyleToVTY :: SL.TokenStyle -> Attr
+    slStyleToVTY tstyle =
+      Attr
+        { attrStyle =
+            SetTo $
+              (if tstyle.tokenBold then bold else 0)
+                .|. (if tstyle.tokenItalic then italic else 0)
+                .|. (if tstyle.tokenUnderline then underline else 0),
+          attrForeColor = slColorToVTY tstyle.tokenColor,
+          attrBackColor = slColorToVTY tstyle.tokenBackground,
+          attrURL = Default
+        }
+    slColorToVTY Nothing = KeepCurrent
+    slColorToVTY (Just (SL.RGB r g b)) = SetTo $ RGBColor r g b
+
+-- | This is created by using SL.parseTheme to parse and then show this theme:
+-- https://github.com/catppuccin/ksyntaxhighlighting/blob/main/themes/mocha.theme
+catppuccinMocha :: SL.Style
+catppuccinMocha =
+  SL.Style
+    { SL.tokenStyles =
+        Map.fromList
+          [ (SL.KeywordTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 203 166 247)}),
+            (SL.DataTypeTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 203 166 247)}),
+            (SL.DecValTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.BaseNTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.FloatTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.ConstantTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.CharTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 245 194 231)}),
+            (SL.SpecialCharTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 245 194 231)}),
+            (SL.StringTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 166 227 161)}),
+            (SL.VerbatimStringTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168)}),
+            (SL.SpecialStringTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168)}),
+            (SL.ImportTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 166 227 161)}),
+            (SL.CommentTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 108 112 134), SL.tokenItalic = True}),
+            (SL.DocumentationTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168)}),
+            (SL.AnnotationTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 249 226 175)}),
+            (SL.CommentVarTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 108 112 134), SL.tokenItalic = True}),
+            (SL.OtherTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.FunctionTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 137 180 250)}),
+            (SL.VariableTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 245 194 231)}),
+            (SL.ControlFlowTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 203 166 247)}),
+            (SL.OperatorTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 137 220 235)}),
+            (SL.BuiltInTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168)}),
+            (SL.ExtensionTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 137 180 250)}),
+            (SL.PreprocessorTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 245 194 231)}),
+            (SL.AttributeTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 180 190 254)}),
+            (SL.RegionMarkerTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 108 112 134), SL.tokenItalic = True}),
+            (SL.InformationTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.WarningTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 250 179 135)}),
+            (SL.AlertTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168), SL.tokenBold = True}),
+            (SL.ErrorTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 243 139 168), SL.tokenUnderline = True}),
+            (SL.NormalTok, SL.defStyle {SL.tokenColor = Just (SL.RGB 205 214 244)})
+          ],
+      SL.defaultColor = Just (SL.RGB 205 214 244),
+      SL.backgroundColor = Nothing,
+      SL.lineNumberColor = Nothing,
+      SL.lineNumberBackgroundColor = Nothing
+    }
