@@ -17,7 +17,7 @@ import Brick.Widgets.Border
 import Brick.Widgets.Edit
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
-import Data.IORef (IORef, newIORef, readIORef)
+import Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Text as T
 import Data.Text.Zipper (clearZipper)
 import qualified Graphics.Vty as V
@@ -37,26 +37,25 @@ data State = State
     evchan :: BChan Event,
     focus :: FocusRing Name,
     promptEditor :: Editor T.Text Name,
-    running :: IORef Bool,
     httpMan :: HTTP.Manager,
     -- | These are stored in reverse since we update the latest message.
     timeline :: [Timeline.Entry],
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
     model :: ModelInfo,
-    runStatus :: T.Text
+    -- | Nothing if running, Just reason_string if stopped.
+    stopReason :: Maybe T.Text
   }
 
 makeLensesFor
   [ ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
-    ("runStatus", "stateRunStatusL")
+    ("stopReason", "stateStopReasonL")
   ]
   ''State
 
 mkInitialState :: Config -> BChan Event -> HTTP.Manager -> ModelInfo -> IO State
-mkInitialState config evchan httpMan model = do
-  running' <- newIORef False
+mkInitialState config evchan httpMan model =
   pure $
     State
       { config,
@@ -65,9 +64,8 @@ mkInitialState config evchan httpMan model = do
         model,
         focus = focusRing [NPromptField],
         promptEditor = editorText NPromptField Nothing "",
-        running = running',
         timeline = [],
-        runStatus = "stop"
+        stopReason = Just "stop"
       }
 
 type App' = App State Event Name
@@ -100,7 +98,7 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         st.focus
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
-    statusBar = withAttr barA $ padLeft Max $ txt st.runStatus
+    statusBar = withAttr barA . padLeft Max . txt $ fromMaybe "running" st.stopReason
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -126,14 +124,14 @@ handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
        in when isAtBottom $ vScrollToEnd outputVPScroll
     Nothing -> pure ()
 handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) =
-  zoom stateRunStatusL $ put reason
+  zoom stateStopReasonL $ put $ Just reason
 handleEvent ev = do
   st <- get
   case focusGetCurrent $ st.focus of
     Just NPromptField -> case ev of
       -- TODO: we don't get shift in the modifiers here when the user presses shift-enter!  Bad!
       (VtyEvent (V.EvKey V.KEnter [])) -> do
-        running <- liftIO $ readIORef $ st.running
+        let running = isNothing st.stopReason
         let prompt = mconcat $ getEditContents $ st.promptEditor
         unless (running || T.null prompt) $ do
           -- clear entry
@@ -143,7 +141,7 @@ handleEvent ev = do
           zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
 
           -- set runStatus to running
-          zoom stateRunStatusL $ put "running"
+          zoom stateStopReasonL $ put Nothing
 
           -- start completions request
           ctx <- zoom stateTimelineL $ (Completions.Context st.model.id . reverse) <$> get
@@ -154,7 +152,6 @@ handleEvent ev = do
               )
               (st.config).connection.base_url.inner
               (st.httpMan)
-              (st.running)
               ctx
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
     _ -> pure ()

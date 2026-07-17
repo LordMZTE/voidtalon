@@ -11,14 +11,12 @@ module VoidTalon.Net.Completions
 where
 
 import Control.Concurrent (forkIO)
-import Control.Exception (finally)
 import Data.Aeson
 import Data.Aeson.Encoding
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (ord)
-import Data.IORef (IORef, atomicWriteIORef)
 import qualified Data.Text as T
 import Data.Word (Word8)
 import Lens.Micro
@@ -47,16 +45,13 @@ perform ::
   URI ->
   -- | HTTP connection Manager
   Manager ->
-  -- | The value will be set to true to indicate an ongoing operation and set to false once we're done.
-  IORef Bool ->
   -- | Context to send the request with
   Context ->
   IO ()
-perform evchan uri http running ctx = do
+perform evchan uri http ctx = do
   let endpoint = uri & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req = req' {method = "POST", requestBody = RequestBodyLBS $ mkCtxRequestBody ctx}
-  atomicWriteIORef running True
   _ <- forkIO $ withResponse req http handleResponse
   pure ()
   where
@@ -90,9 +85,7 @@ perform evchan uri http running ctx = do
     processLine _ = pure () -- garbage
     handleResponse :: Response BodyReader -> IO ()
     handleResponse res =
-      finally
-        (checkStatusOK res >> takeLines mempty res.responseBody)
-        (atomicWriteIORef running False)
+      checkStatusOK res >> takeLines mempty res.responseBody
 
     mkCtxRequestBody :: Context -> LBS.ByteString
     mkCtxRequestBody = encodingToLazyByteString . contextEncoding
