@@ -3,13 +3,13 @@
 module VoidTalon.TUI.Markdown (inlineWidget, docWidget, markdownWidget, wordWrap) where
 
 import Brick
-import Brick.BorderMap qualified as BorderMap
+import qualified Brick.BorderMap as BorderMap
 import Brick.Widgets.Border (borderWithLabel, hBorder)
 import Commonmark (ListType (BulletList, OrderedList))
 import Commonmark.Parser (commonmark)
 import Data.List (groupBy)
 import Data.Maybe (catMaybes, isJust)
-import Data.Text qualified as T
+import qualified Data.Text as T
 import Graphics.Vty
   ( Attr (attrBackColor, attrForeColor, attrURL),
     Color (Color240),
@@ -27,7 +27,7 @@ import Graphics.Vty
   )
 import Graphics.Vty.Attributes (MaybeDefault (SetTo))
 import VoidTalon.Markdown as M
-import VoidTalon.TUI.Types qualified as TT
+import qualified VoidTalon.TUI.Types as TT
 
 codeAttr :: Attr -> Attr
 codeAttr a = a {attrBackColor = SetTo $ Color240 $ 241 - 16}

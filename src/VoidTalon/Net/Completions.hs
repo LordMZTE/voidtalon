@@ -10,10 +10,8 @@ module VoidTalon.Net.Completions
   )
 where
 
-import Control.Applicative (Alternative (empty))
 import Control.Concurrent (forkIO)
 import Control.Exception (finally)
-import Control.Monad (when)
 import Data.Aeson
 import Data.Aeson.Encoding
 import qualified Data.ByteString as BS
@@ -29,13 +27,14 @@ import Network.HTTP.Client
     Manager,
     Request (method, requestBody),
     RequestBody (RequestBodyLBS),
-    Response (responseBody, responseStatus),
+    Response (responseBody),
     requestFromURI,
     withResponse,
   )
-import Network.HTTP.Types (statusIsSuccessful)
 import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
+import System.FilePath ((</>))
+import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
 import qualified VoidTalon.Timeline as Timeline
 
@@ -52,7 +51,7 @@ perform ::
   Context ->
   IO ()
 perform evchan uri http running ctx = do
-  let endpoint = uri & uriPathLens %~ (<> "/chat/completions")
+  let endpoint = uri & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req = req' {method = "POST", requestBody = RequestBodyLBS $ mkCtxRequestBody ctx}
   atomicWriteIORef running True
@@ -90,26 +89,25 @@ perform evchan uri http running ctx = do
     handleResponse :: Response BodyReader -> IO ()
     handleResponse res =
       finally
-        ( do
-            when (not $ statusIsSuccessful res.responseStatus) $
-              fail ("Couldn't get completions, got code " <> (show res.responseStatus))
-            takeLines mempty res.responseBody
-        )
+        (checkStatusOK res >> takeLines mempty res.responseBody)
         (atomicWriteIORef running False)
 
     mkCtxRequestBody :: Context -> LBS.ByteString
     mkCtxRequestBody = encodingToLazyByteString . contextEncoding
 
 data Context = Context
-  { timeline :: [Timeline.Entry]
+  { -- | Model to use
+    model :: T.Text,
+    timeline :: [Timeline.Entry]
   }
 
 -- We don't specify a ToJSON instance because that would require us to also implement `toJSON`,
 -- causing code duplication and no advantage
 contextEncoding :: Context -> Encoding
-contextEncoding Context {timeline} =
+contextEncoding Context {model, timeline} =
   pairs
     ( "stream" .= True
+        <> "model" .= model
         <> pair
           ("messages" :: Key)
           ( list
@@ -143,7 +141,7 @@ instance FromJSON RawUpdate where
   parseJSON (Object v) =
     RawUpdate
       <$> v .: "choices"
-  parseJSON _ = empty
+  parseJSON _ = mempty
 
 newtype CompletionChoice = CompletionChoice {inner :: LLMMessage}
 
@@ -155,4 +153,4 @@ instance FromJSON CompletionChoice where
               <$> d .:? "reasoning_content" .!= ""
               <*> d .:? "content" .!= ""
           )
-  parseJSON _ = empty
+  parseJSON _ = mempty

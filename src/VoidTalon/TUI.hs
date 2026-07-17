@@ -27,6 +27,7 @@ import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
 import qualified VoidTalon.Net.Completions as Completions
+import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
@@ -39,7 +40,10 @@ data State = State
     running :: IORef Bool,
     httpMan :: HTTP.Manager,
     -- | These are stored in reverse since we update the latest message.
-    timeline :: [Timeline.Entry]
+    timeline :: [Timeline.Entry],
+    -- | The model to use.  This will be expanded to be a list later, so the user can select in the
+    -- TUI
+    model :: ModelInfo
   }
 
 makeLensesFor
@@ -48,18 +52,18 @@ makeLensesFor
   ]
   ''State
 
-mkInitialState :: Config -> BChan Event -> IO State
-mkInitialState config evchan = do
+mkInitialState :: Config -> BChan Event -> HTTP.Manager -> ModelInfo -> IO State
+mkInitialState config evchan httpMan model = do
   running' <- newIORef False
-  httpMan' <- HTTP.newManager HTTP.defaultManagerSettings
   pure $
     State
       { config,
         evchan,
+        httpMan,
+        model,
         focus = focusRing [NPromptField],
         promptEditor = editorText NPromptField Nothing "",
         running = running',
-        httpMan = httpMan',
         timeline = []
       }
 
@@ -130,7 +134,7 @@ handleEvent ev = do
           -- append prompt to timeline
           zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
           -- start completions request
-          ctx <- zoom stateTimelineL $ (Completions.Context . reverse) <$> get
+          ctx <- zoom stateTimelineL $ (Completions.Context st.model.id . reverse) <$> get
           liftIO $
             Completions.perform
               ( writeBChan (st.evchan)

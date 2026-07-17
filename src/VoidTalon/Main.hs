@@ -17,6 +17,8 @@ import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import qualified VoidTalon.TUI as TUI
 import Toml.Schema (Result (Failure, Success))
+import qualified VoidTalon.Net.Models as Models
+import qualified Network.HTTP.Client as HTTP
 
 main :: IO ()
 main = do
@@ -31,8 +33,13 @@ main = do
       when (warns /= []) $ hPutStrLn stderr "Warnings while parsing config:"
       mapM_ (hPutStrLn stderr) warns
       pure conf
+  httpMan <- HTTP.newManager HTTP.defaultManagerSettings
+  models <- Models.list config.connection.base_url.inner httpMan
+  model <- case models of
+    m:_ -> pure m
+    _ -> fail "The server reported an empty list of models!"
   chan <- newBChan 32
-  initState <- TUI.mkInitialState config chan
+  initState <- TUI.mkInitialState config chan httpMan model
   (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app initState
   Vty.shutdown vty
 
