@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Util (untab, editInEditor) where
+module VoidTalon.Util (untab, editInEditor, remove) where
 
 import Control.Exception (finally)
 import Data.Maybe (fromMaybe)
@@ -35,3 +35,10 @@ editInEditor ext t = do
   LT.writeFile path t
   res <- finally (callProcess editor [path] >> LT.readFile path) (removeFile path)
   pure res
+
+-- | Removes the nth element from a list keeping all others.
+-- no-op if the number is out-of-bounds.
+remove :: (Num n, Eq n) => n -> [a] -> [a]
+remove _ xs@[] = xs
+remove 0 (_:xs) = xs
+remove n (x:xs) = x:(remove (n - 1) xs)

@@ -24,6 +24,7 @@ import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
+import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
@@ -34,6 +35,7 @@ import qualified VoidTalon.TUI.Timeline as Timeline
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Util as Util
+import VoidTalon.Util (remove)
 
 data State = State
   { config :: Config,
@@ -47,13 +49,17 @@ data State = State
     -- TUI
     model :: ModelInfo,
     -- | Nothing if running, Just reason_string if stopped.
-    stopReason :: Maybe T.Text
+    stopReason :: Maybe T.Text,
+    -- | Index of the element in the timeline that's focused.  Starts from the bottom.
+    timelineFocus :: Int
   }
 
 makeLensesFor
-  [ ("promptEditor", "statePromptEditorL"),
+  [ ("focus", "stateFocusL"),
+    ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
-    ("stopReason", "stateStopReasonL")
+    ("stopReason", "stateStopReasonL"),
+    ("timelineFocus", "stateTimelineFocusL")
   ]
   ''State
 
@@ -65,10 +71,11 @@ mkInitialState config evchan httpMan model =
         evchan,
         httpMan,
         model,
-        focus = focusRing [NPromptField],
+        focus = focusRing [NPromptField, NTimelineVP],
         promptEditor = editorText NPromptField Nothing "",
         timeline = [],
-        stopReason = Just "stop"
+        stopReason = Just "stop",
+        timelineFocus = 0
       }
 
 type App' = App State Event Name
@@ -85,17 +92,24 @@ app =
           attrMap
             V.defAttr
             [ (warningA, fg V.yellow),
-              (barA, V.magenta `on` (V.Color240 $ 235 - 16))
+              (barA, V.magenta `on` (V.Color240 $ 235 - 16)),
+              (selectedA, fg V.blue)
             ]
     }
 
 outputVPScroll :: ViewportScroll Name
-outputVPScroll = viewportScroll NOutputVP
+outputVPScroll = viewportScroll NTimelineVP
 
 draw :: State -> [Widget Name]
 draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
   where
-    output = Timeline.draw st.timeline
+    output =
+      Timeline.draw
+        ( if (focusGetCurrent st.focus == Just NTimelineVP)
+            then Just st.timelineFocus
+            else Nothing
+        )
+        st.timeline
     prompt =
       withFocusRing
         st.focus
@@ -103,7 +117,13 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         $ st.promptEditor
     statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
     statusBarRight = txt $ fromMaybe "running" st.stopReason
-    statusBarLeft = txt "<C-q> Quit | <C-e/y> Scl | <M-Cr> Ins. NL | <C-x> Editor"
+    statusBarLeft = txt $ globalHelp <> localHelp
+
+    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl"
+    localHelp = case focusGetCurrent st.focus of
+      Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
+      Just NTimelineVP -> " | k/j Move | d Delete"
+      _ -> ""
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -111,14 +131,21 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
 -- Scroll with <C-e> and <C-y>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy outputVPScroll 1
 handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy outputVPScroll $ -1
+-- Change focus with <C-w>
+handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
+  stateFocusL %= focusNext
+  cur <- focusGetCurrent <$> gets (.focus)
+  -- If we've just focused the timeline, reset focused element to last entry
+  when (cur == Just NTimelineVP) $ stateTimelineFocusL .= 0
+  makeVisible $ NTimelineEntry 0
 -- TODO: <> on ByteString is slow (O(n)), optimize
 handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
   -- append text to output
-  zoom stateTimelineL $ modify $ \case
+  stateTimelineL %= \case
     (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
     tl -> (Timeline.OutputEntry added) : tl
   -- stick to bottom
-  maybeVP <- lookupViewport NOutputVP
+  maybeVP <- lookupViewport NTimelineVP
   case maybeVP of
     Just vp ->
       let top = vp ^. vpTop
@@ -129,7 +156,7 @@ handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
        in when isAtBottom $ vScrollToEnd outputVPScroll
     Nothing -> pure ()
 handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) =
-  zoom stateStopReasonL $ put $ Just reason
+  stateStopReasonL .= Just reason
 handleEvent ev = do
   st <- get
   case focusGetCurrent $ st.focus of
@@ -137,22 +164,22 @@ handleEvent ev = do
       -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
       -- supported by vty.
       (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
-        zoom statePromptEditorL $ modify $ applyEdit breakLine
+        statePromptEditorL %= applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) -> do
         let running = isNothing st.stopReason
         let prompt = T.intercalate "\n" $ getEditContents $ st.promptEditor
         unless (running || T.null prompt) $ do
           -- clear entry
-          zoom statePromptEditorL $ modify $ applyEdit clearZipper
+          statePromptEditorL %= applyEdit clearZipper
 
           -- append prompt to timeline
-          zoom stateTimelineL $ modify (Timeline.PromptEntry prompt :)
+          stateTimelineL %= (Timeline.PromptEntry prompt :)
 
           -- set runStatus to running
-          zoom stateStopReasonL $ put Nothing
+          stateStopReasonL .= Nothing
 
           -- start completions request
-          ctx <- zoom stateTimelineL $ (Completions.Context st.model.id . reverse) <$> get
+          ctx <- Completions.Context st.model.id . reverse <$> gets (.timeline)
           liftIO $
             Completions.perform
               ( writeBChan (st.evchan)
@@ -166,8 +193,28 @@ handleEvent ev = do
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
         prompt <- gets $ LT.intercalate "\n" . fmap LT.fromStrict . getEditContents . (.promptEditor)
         suspendAndResume $ do
-              prompt' <- Util.editInEditor "md" prompt <|> pure prompt
-              let ls = LT.toStrict <$> LT.split (== '\n') prompt'
-              pure $ st & statePromptEditorL %~ (applyEdit $ const $ textZipper ls Nothing)
+          prompt' <- Util.editInEditor "md" prompt <|> pure prompt
+          let ls = LT.toStrict <$> LT.split (== '\n') prompt'
+          pure $ st & statePromptEditorL %~ (applyEdit $ const $ textZipper ls Nothing)
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
+    Just NTimelineVP -> do
+      cur <- gets (.timelineFocus)
+      case ev of
+        (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
+          tl <- gets (.timeline)
+          let new = case cur + 1 of
+                n | n >= length tl -> 0
+                n -> n
+          stateTimelineFocusL .= new
+          makeVisible $ NTimelineEntry new
+        (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
+          new <- case cur - 1 of
+            n | n < 0 -> subtract 1 . length <$> gets (.timeline)
+            n -> pure n
+          stateTimelineFocusL .= new
+          makeVisible $ NTimelineEntry new
+        (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
+          idx <- max 0 <$> gets (.timelineFocus)
+          stateTimelineL %= remove idx
+        _ -> pure ()
     _ -> pure ()

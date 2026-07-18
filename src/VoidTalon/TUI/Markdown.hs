@@ -35,6 +35,7 @@ import Graphics.Vty.Attributes (MaybeDefault (SetTo))
 import qualified Skylighting as SL
 import VoidTalon.Markdown as M
 import qualified VoidTalon.TUI.Types as TT
+import Lens.Micro
 
 codeAttr :: Attr -> Attr
 codeAttr a = a {attrBackColor = SetTo $ Color240 $ 241 - 16}
@@ -55,8 +56,10 @@ linkAttr url a =
     )
     underline
 
-inlineWidgetWith :: Attr -> M.Inline -> Widget a
-inlineWidgetWith attr inl = lineWrapWidget . splitLines $ segs attr inl
+inlineWidget :: M.Inline -> Widget a
+inlineWidget inl = lineWrapWidget $ do
+  attr <- (^. attrL) <$> getContext
+  pure $ splitLines $ segs attr inl
   where
     -- We use Just to mean a span of text, and Nothing to mean a line break.
     segs _ InlineEmpty = []
@@ -72,10 +75,11 @@ inlineWidgetWith attr inl = lineWrapWidget . splitLines $ segs attr inl
     splitLines = fmap catMaybes . groupBy (flip $ const . isJust)
 
 -- | Given a list of lines of Images, returns a widget that renders these lines with wrapping.
-lineWrapWidget :: [[Image]] -> Widget a
+lineWrapWidget :: RenderM n [[Image]] -> Widget n
 lineWrapWidget lineImages = Widget Greedy Fixed $ do
+  imgs <- lineImages
   c <- getContext
-  let img = vertCat $ lineImage <$> (concatMap (wordWrap imageWidth c.availWidth) lineImages)
+  let img = vertCat $ lineImage <$> (concatMap (wordWrap imageWidth c.availWidth) imgs)
   pure $ Result img [] [] [] BorderMap.empty
   where
     -- Concats multiple images to an image, but doesn't turn the empty line to an empty image, but
@@ -90,9 +94,6 @@ splitSpace = T.groupBy group
   where
     group _ ' ' = False
     group _ _ = True
-
-inlineWidget :: M.Inline -> Widget a
-inlineWidget = inlineWidgetWith defAttr
 
 docWidget :: M.Doc -> Widget a
 docWidget = vBox . widgs
@@ -112,8 +113,11 @@ docWidget = vBox . widgs
             (\(n, d) -> (str $ (show n) <> ". ", docWidget d))
               <$> zip [start ..] xs
     widgs (DocHeading depth t) =
-      [ str (take depth (repeat '#') <> " ")
-          <+> inlineWidgetWith (withStyle defAttr underline) t
+      [ modifyDefAttr
+          (flip withStyle underline)
+          ( str (take depth (repeat '#') <> " ")
+              <+> inlineWidget t
+          )
       ]
     widgs (DocCodeBlock lang t) = singleton $
       case SL.lookupSyntax lang SL.defaultSyntaxMap of
@@ -165,7 +169,7 @@ highlightedCode ::
   (Widget a, Widget a)
 highlightedCode syntax t = (txt syntax.sName,) $ case tokResult of
   Left _ -> txtWrap t -- Error, fallback to unhighlighted text
-  Right sourceLines -> lineWrapWidget $ (tokImage <$>) <$> sourceLines
+  Right sourceLines -> lineWrapWidget $ pure $ (tokImage <$>) <$> sourceLines
   where
     tokCfg =
       SL.TokenizerConfig
