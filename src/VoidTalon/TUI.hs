@@ -122,7 +122,7 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
     globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl"
     localHelp = case focusGetCurrent st.focus of
       Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
-      Just NTimelineVP -> " | k/j Move | d Delete"
+      Just NTimelineVP -> " | k/j Move | d Delete | e Edit"
       _ -> ""
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
@@ -216,5 +216,8 @@ handleEvent ev = do
         (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
           idx <- max 0 <$> gets (.timelineFocus)
           stateTimelineL %= remove idx
+        (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
+          idx <- gets (.timelineFocus)
+          suspendAndResume $ mapMOf (stateTimelineL . ix idx) (liftIO . Timeline.editEntry) st
         _ -> pure ()
     _ -> pure ()

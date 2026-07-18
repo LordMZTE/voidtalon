@@ -1,15 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.TUI.Timeline (entryWidget, draw) where
+module VoidTalon.TUI.Timeline (entryWidget, draw, editEntry) where
 
 import Brick
 import Brick.Widgets.Border
 import Data.Function (applyWhen)
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
 import VoidTalon.TUI.Markdown (markdownWidget)
 import VoidTalon.TUI.Types (Name (..), selectedA)
 import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
+import VoidTalon.Util (editInEditor)
 
 messagePadding :: Padding
 messagePadding = Pad 3
@@ -52,3 +54,16 @@ draw focus =
     isFocused n = case focus of
       Nothing -> False
       Just m -> n == m
+
+-- | Invoke the user's editor on the given entry
+editEntry :: TL.Entry -> IO TL.Entry
+editEntry (TL.PromptEntry t) =
+  TL.PromptEntry . LT.toStrict <$> (editInEditor "md" $ LT.fromStrict t)
+editEntry (TL.OutputEntry (TL.LLMMessage reasoning content)) = do
+  let separator = "\n" <> T.replicate 100 "=" <> "\n"
+  let toEdit = LT.fromChunks [reasoning, separator, content]
+  edited <- editInEditor "md" toEdit
+  pure . TL.OutputEntry $ case LT.splitOn (LT.fromStrict separator) edited of
+    [] -> mempty
+    [content'] -> TL.LLMMessage "" (LT.toStrict content')
+    reasoning' : rest -> TL.LLMMessage (LT.toStrict reasoning') (LT.toStrict $ mconcat rest)
