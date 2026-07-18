@@ -15,11 +15,13 @@ import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Edit
+import Control.Applicative ((<|>))
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Text as T
-import Data.Text.Zipper (breakLine, clearZipper)
+import qualified Data.Text.Lazy as LT
+import Data.Text.Zipper (breakLine, clearZipper, textZipper)
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.TH (makeLensesFor)
@@ -31,6 +33,7 @@ import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
+import qualified VoidTalon.Util as Util
 
 data State = State
   { config :: Config,
@@ -100,7 +103,7 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         $ st.promptEditor
     statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
     statusBarRight = txt $ fromMaybe "running" st.stopReason
-    statusBarLeft = txt "<C-q> Quit | <C-e/y> Scl | <M-Cr> Ins. NL"
+    statusBarLeft = txt "<C-q> Quit | <C-e/y> Scl | <M-Cr> Ins. NL | <C-x> Editor"
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -137,7 +140,7 @@ handleEvent ev = do
         zoom statePromptEditorL $ modify $ applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) -> do
         let running = isNothing st.stopReason
-        let prompt = mconcat $ getEditContents $ st.promptEditor
+        let prompt = T.intercalate "\n" $ getEditContents $ st.promptEditor
         unless (running || T.null prompt) $ do
           -- clear entry
           zoom statePromptEditorL $ modify $ applyEdit clearZipper
@@ -158,5 +161,13 @@ handleEvent ev = do
               (st.config).connection.base_url.inner
               (st.httpMan)
               ctx
+
+      -- Invoke editor with <C-x>
+      (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
+        prompt <- gets $ LT.intercalate "\n" . fmap LT.fromStrict . getEditContents . (.promptEditor)
+        suspendAndResume $ do
+              prompt' <- Util.editInEditor "md" prompt <|> pure prompt
+              let ls = LT.toStrict <$> LT.split (== '\n') prompt'
+              pure $ st & statePromptEditorL %~ (applyEdit $ const $ textZipper ls Nothing)
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
     _ -> pure ()

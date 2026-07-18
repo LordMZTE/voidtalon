@@ -43,6 +43,8 @@ executable vt
       , microlens-th
       , network-uri
       , optparse-applicative
+      , process
+      , random
       , skylighting
       , text
       , text-zipper

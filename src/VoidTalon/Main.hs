@@ -2,8 +2,6 @@ module VoidTalon.Main (main) where
 
 import Brick.BChan (newBChan)
 import Brick.Main (customMainWithDefaultVty)
-import qualified VoidTalon.CLI as CLI
-import qualified VoidTalon.Config as Config
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
@@ -13,12 +11,14 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 import qualified Graphics.Vty as Vty
+import qualified Network.HTTP.Client as HTTP
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
-import qualified VoidTalon.TUI as TUI
 import Toml.Schema (Result (Failure, Success))
+import qualified VoidTalon.CLI as CLI
+import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Net.Models as Models
-import qualified Network.HTTP.Client as HTTP
+import qualified VoidTalon.TUI as TUI
 
 main :: IO ()
 main = do
@@ -36,9 +36,11 @@ main = do
   httpMan <- HTTP.newManager HTTP.defaultManagerSettings
   models <- Models.list config.connection.base_url.inner httpMan
   model <- case models of
-    m:_ -> pure m
+    m : _ -> pure m
     _ -> fail "The server reported an empty list of models!"
-  chan <- newBChan 32
+  -- We leave space for this many events because we might get incoming tokens while the user has
+  -- the editor open.  In order to not block the network connection, we need to buffer those events.
+  chan <- newBChan 1024
   initState <- TUI.mkInitialState config chan httpMan model
   (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app initState
   Vty.shutdown vty
