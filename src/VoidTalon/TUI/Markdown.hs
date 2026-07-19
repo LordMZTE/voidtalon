@@ -28,7 +28,7 @@ import Graphics.Vty
     text',
     underline,
     vertCat,
-    withStyle,
+    withStyle, green,
   )
 import Graphics.Vty.Attributes (MaybeDefault (SetTo))
 import qualified Skylighting as SL
@@ -38,6 +38,7 @@ import Lens.Micro
 import Data.Functor.Identity (Identity(runIdentity))
 import Brick.Widgets.Table (ColumnAlignment(..), table, setColAlignment, renderTable)
 import Commonmark.Extensions (ColAlignment(..))
+import Brick.Widgets.Center (hCenter)
 
 codeAttr :: Attr -> Attr
 codeAttr a = a {attrBackColor = SetTo $ Color240 $ 241 - 16}
@@ -58,6 +59,9 @@ linkAttr url a =
     )
     underline
 
+mathAttr :: Attr -> Attr
+mathAttr a = a { attrForeColor = SetTo green }
+
 inlineWidget :: M.Inline -> Widget a
 inlineWidget inl = lineWrapWidget $ do
   attr <- (^. attrL) <$> getContext
@@ -72,6 +76,10 @@ inlineWidget inl = lineWrapWidget $ do
     segs a (InlineEmph t) = segs (emphAttr a) t
     segs a (InlineStrong t) = segs (strongAttr a) t
     segs a (InlineLink _ dest _ t) = segs (linkAttr dest a) t
+    segs a (InlineMath m) = math a m
+    segs a (InlineMathBlock m) = math a m
+
+    math a m = pure $ Just $ text' (mathAttr a) m
 
     splitLines :: [Maybe a] -> [[a]]
     splitLines = fmap catMaybes . groupBy (flip $ const . isJust)
@@ -102,6 +110,8 @@ docWidget = vBox . widgs
   where
     widgs DocEmpty = []
     widgs (DocConcat a b) = widgs a ++ widgs b
+    -- Center math blocks
+    widgs (DocPar mb@(InlineMathBlock _)) = [hCenter $ inlineWidget mb]
     widgs (DocPar t) = [inlineWidget t]
     widgs DocRule = [hBorder]
     widgs (DocList t xs) =

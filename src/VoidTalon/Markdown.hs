@@ -6,6 +6,7 @@ module VoidTalon.Markdown (Inline (..), Doc (..), spec) where
 import qualified Commonmark as C
 import qualified Commonmark.Extensions.PipeTable as CE
 import qualified Data.Text as T
+import qualified Commonmark.Extensions as CE
 
 data Inline
   = InlineEmpty
@@ -16,6 +17,10 @@ data Inline
   | InlineEmph Inline
   | InlineStrong Inline
   | InlineLink Bool T.Text T.Text Inline -- isImage, dest, title, desc
+  | InlineMath T.Text
+  | -- This should really be a part of Doc, but that's unfortunately not how the markdown source is
+    -- structured because you can put a $$ math block $$ in a paragraph.
+    InlineMathBlock T.Text
   deriving (Show)
 
 instance Semigroup Inline where
@@ -50,6 +55,10 @@ instance C.IsInline Inline where
   image = InlineLink True
   code = InlineCode
   rawInline _ = C.code
+
+instance CE.HasMath Inline where
+  inlineMath = InlineMath
+  displayMath = InlineMathBlock
 
 -- | A markdown AST suited for rendering to our TUI later
 data Doc
@@ -101,4 +110,4 @@ instance CE.HasPipeTable Inline Doc where
   pipeTable align header body = DocTable align (header : body)
 
 spec :: (Monad m) => C.SyntaxSpec m Inline Doc
-spec = C.defaultSyntaxSpec <> CE.pipeTableSpec
+spec = C.defaultSyntaxSpec <> CE.mathSpec <> CE.pipeTableSpec
