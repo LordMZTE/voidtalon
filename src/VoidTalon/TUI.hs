@@ -34,8 +34,8 @@ import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
-import qualified VoidTalon.Util as Util
 import VoidTalon.Util (remove)
+import qualified VoidTalon.Util as Util
 
 data State = State
   { config :: Config,
@@ -122,7 +122,7 @@ draw st = [vBox [output, hBorder, (joinBorders prompt), statusBar]]
     globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl"
     localHelp = case focusGetCurrent st.focus of
       Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
-      Just NTimelineVP -> " | k/j Move | d Delete | e Edit"
+      Just NTimelineVP -> " | k/j Move | d Delete | e Edit | <CR> Regen"
       _ -> ""
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
@@ -175,49 +175,73 @@ handleEvent ev = do
           -- append prompt to timeline
           stateTimelineL %= (Timeline.PromptEntry prompt :)
 
-          -- set runStatus to running
-          stateStopReasonL .= Nothing
-
-          -- start completions request
-          ctx <- Completions.Context st.model.id . reverse <$> gets (.timeline)
-          liftIO $
-            Completions.perform
-              ( writeBChan (st.evchan)
-                  . EvCompletionUpdate
-              )
-              (st.config).connection.base_url.inner
-              (st.httpMan)
-              ctx
+          startCompletions
 
       -- Invoke editor with <C-x>
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
-        prompt <- gets $ LT.intercalate "\n" . fmap LT.fromStrict . getEditContents . (.promptEditor)
+        let prompt = LT.intercalate "\n" . fmap LT.fromStrict . getEditContents $ st.promptEditor
         suspendAndResume $ do
           prompt' <- Util.editInEditor "md" prompt <|> pure prompt
           let ls = LT.toStrict <$> LT.split (== '\n') prompt'
           pure $ st & statePromptEditorL %~ (applyEdit $ const $ textZipper ls Nothing)
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
     Just NTimelineVP -> do
-      cur <- gets (.timelineFocus)
       case ev of
         (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
-          tl <- gets (.timeline)
-          let new = case cur + 1 of
-                n | n >= length tl -> 0
+          let new = case st.timelineFocus + 1 of
+                n | n >= length st.timeline -> 0
                 n -> n
           stateTimelineFocusL .= new
           makeVisible $ NTimelineEntry new
         (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
-          new <- case cur - 1 of
-            n | n < 0 -> subtract 1 . length <$> gets (.timeline)
-            n -> pure n
+          let new = case st.timelineFocus - 1 of
+                n | n < 0 -> subtract 1 $ length st.timeline
+                n -> n
           stateTimelineFocusL .= new
           makeVisible $ NTimelineEntry new
         (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
-          idx <- max 0 <$> gets (.timelineFocus)
+          let idx = max 0 (st.timelineFocus)
           stateTimelineL %= remove idx
         (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
-          idx <- gets (.timelineFocus)
-          suspendAndResume $ mapMOf (stateTimelineL . ix idx) (liftIO . Timeline.editEntry) st
+          suspendAndResume $
+            mapMOf
+              (stateTimelineL . ix st.timelineFocus)
+              (liftIO . Timeline.editEntry)
+              st
+        (VtyEvent (V.EvKey V.KEnter [])) -> unless (isNothing st.stopReason) $ do
+          -- tail of the timeline with the selected entry being the last one
+          let tl' = drop st.timelineFocus $ st.timeline
+          let tl =
+                -- Remove timeline entries from our tail until a prompt remains
+                dropWhile
+                  ( \case
+                      (Timeline.PromptEntry _) -> False
+                      _ -> True
+                  )
+                  tl'
+
+          -- If the rest the timeline is completely empty, we have nothing to work with.
+          unless (null tl) $ do
+            stateTimelineL .= tl
+            startCompletions
         _ -> pure ()
     _ -> pure ()
+
+-- | Starts generation using the current timeline.
+-- Caller asserts that completions aren't already running.
+startCompletions :: EventM n State ()
+startCompletions = do
+  st <- get
+  -- set runStatus to running
+  stateStopReasonL .= Nothing
+
+  -- start completions request
+  let ctx = Completions.Context st.model.id $ reverse st.timeline
+  liftIO $
+    Completions.perform
+      ( writeBChan (st.evchan)
+          . EvCompletionUpdate
+      )
+      (st.config).connection.base_url.inner
+      (st.httpMan)
+      ctx
