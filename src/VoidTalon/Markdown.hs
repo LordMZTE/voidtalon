@@ -1,9 +1,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Markdown (Inline (..), Doc (..)) where
+module VoidTalon.Markdown (Inline (..), Doc (..), spec) where
 
 import qualified Commonmark as C
+import qualified Commonmark.Extensions.PipeTable as CE
 import qualified Data.Text as T
 
 data Inline
@@ -60,6 +61,7 @@ data Doc
   | DocHeading Int Inline
   | DocCodeBlock T.Text T.Text
   | DocQuote Doc
+  | DocTable [CE.ColAlignment] [[Inline]]
   deriving (Show)
 
 instance Semigroup Doc where
@@ -94,3 +96,9 @@ instance C.IsBlock Inline Doc where
             then ["[", label, "](", dest, ")"]
             else ["[", label, "](", dest, " \"", title, "\"", ")"]
   list ltype _ = DocList ltype
+
+instance CE.HasPipeTable Inline Doc where
+  pipeTable align header body = DocTable align (header : body)
+
+spec :: (Monad m) => C.SyntaxSpec m Inline Doc
+spec = C.defaultSyntaxSpec <> CE.pipeTableSpec

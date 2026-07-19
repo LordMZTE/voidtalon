@@ -33,6 +33,7 @@ executable vt
       , brick
       , bytestring
       , commonmark
+      , commonmark-extensions
       , containers
       , directory
       , filepath

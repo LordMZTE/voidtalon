@@ -6,10 +6,9 @@ module VoidTalon.TUI.Markdown (inlineWidget, docWidget, markdownWidget, wordWrap
 import Brick
 import qualified Brick.BorderMap as BorderMap
 import Brick.Widgets.Border (borderWithLabel, hBorder)
-import Commonmark (ListType (BulletList, OrderedList))
-import Commonmark.Parser (commonmark)
+import Commonmark (ListType (BulletList, OrderedList), commonmarkWith)
 import Data.Bits ((.|.))
-import Data.List (groupBy, singleton)
+import Data.List (groupBy)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Data.Text as T
@@ -36,6 +35,9 @@ import qualified Skylighting as SL
 import VoidTalon.Markdown as M
 import qualified VoidTalon.TUI.Types as TT
 import Lens.Micro
+import Data.Functor.Identity (Identity(runIdentity))
+import Brick.Widgets.Table (ColumnAlignment(..), table, setColAlignment, renderTable)
+import Commonmark.Extensions (ColAlignment(..))
 
 codeAttr :: Attr -> Attr
 codeAttr a = a {attrBackColor = SetTo $ Color240 $ 241 - 16}
@@ -119,7 +121,7 @@ docWidget = vBox . widgs
               <+> inlineWidget t
           )
       ]
-    widgs (DocCodeBlock lang t) = singleton $
+    widgs (DocCodeBlock lang t) = pure $
       case SL.lookupSyntax lang SL.defaultSyntaxMap of
         Just syntax -> uncurry borderWithLabel $ highlightedCode syntax t
         Nothing -> borderWithLabel (txt lang) $ txtWrap t -- Unknown language
@@ -136,9 +138,25 @@ docWidget = vBox . widgs
       render $ hBox [border, spacer, TT.bakedWidget resInner]
       where
         inner@(Widget hInner vInner _) = docWidget t
+    widgs (DocTable _ []) = []
+    widgs (DocTable align rows@(hdr:_)) = pure $ Widget Greedy Fixed $ do
+      c <- getContext
+      let nhdrs = length hdr
+      -- Width that's available to fill for each cell if split evenly
+      let availWidth = ((c.availWidth - 1) `div` nhdrs) - 1
+      let tab = table $ (hLimit availWidth . inlineWidget <$>) <$> rows
+      let tab' = foldr ($) tab $ uncurry setColAlignment <$> zip (alignment <$> align) [0..]
+      render $ renderTable tab'
+
+      where
+        alignment :: ColAlignment -> ColumnAlignment
+        alignment LeftAlignedCol = AlignLeft
+        alignment DefaultAlignedCol = AlignLeft
+        alignment RightAlignedCol = AlignRight
+        alignment CenterAlignedCol = AlignCenter
 
 markdownWidget :: String -> T.Text -> Widget a
-markdownWidget docname input = case commonmark docname input of
+markdownWidget docname input = case runIdentity $ commonmarkWith M.spec docname input of
   Left err -> withAttr TT.warningA (strWrap $ show err) <=> txtWrap input
   Right doc -> docWidget doc
 
