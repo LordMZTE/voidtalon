@@ -18,6 +18,8 @@ executable vt
       VoidTalon.Net
       VoidTalon.Net.Completions
       VoidTalon.Net.Models
+      VoidTalon.Tools
+      VoidTalon.Tools.ReadFile
       VoidTalon.TUI
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.Timeline

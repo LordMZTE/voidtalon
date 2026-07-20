@@ -34,6 +34,8 @@ import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
+import VoidTalon.Tools (Tool (..))
+import qualified VoidTalon.Tools.ReadFile
 import VoidTalon.Util (remove)
 import qualified VoidTalon.Util as Util
 
@@ -93,7 +95,8 @@ app =
             V.defAttr
             [ (warningA, fg V.yellow),
               (barA, V.magenta `on` (V.Color240 $ 235 - 16)),
-              (selectedA, fg V.blue)
+              (selectedA, fg V.blue),
+              (toolTitleA, (fg V.red) {V.attrStyle = V.SetTo V.bold})
             ]
     }
 
@@ -236,7 +239,12 @@ startCompletions = do
   stateStopReasonL .= Nothing
 
   -- start completions request
-  let ctx = Completions.Context st.model.id $ reverse st.timeline
+  let ctx =
+        Completions.Context
+          { model = st.model.id,
+            timeline = reverse st.timeline,
+            tools = [("read_file", VoidTalon.Tools.ReadFile.tool.description)]
+          }
   liftIO $
     Completions.perform
       ( writeBChan (st.evchan)

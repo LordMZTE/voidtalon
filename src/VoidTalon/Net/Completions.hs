@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -5,18 +6,19 @@
 module VoidTalon.Net.Completions
   ( perform,
     Context (..),
-    contextEncoding,
     Update (..),
   )
 where
 
 import Control.Concurrent (forkIO)
-import Data.Aeson
+import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
+import Data.Aeson.Types (Parser)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (ord)
+import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Text as T
 import Data.Word (Word8)
 import Lens.Micro
@@ -36,7 +38,8 @@ import System.FilePath ((</>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
 import qualified VoidTalon.Timeline as Timeline
-import VoidTalon.Util (untab)
+import qualified VoidTalon.Tools as Tools
+import VoidTalon.Util (ToJSONEncoding (..), untab)
 
 perform ::
   -- | Consumer that will be called with incoming updates
@@ -88,7 +91,7 @@ perform evchan uri http ctx = do
       checkStatusOK res >> takeLines mempty res.responseBody
 
     mkCtxRequestBody :: Context -> LBS.ByteString
-    mkCtxRequestBody = encodingToLazyByteString . contextEncoding
+    mkCtxRequestBody = encodingToLazyByteString . toEncoding
 
     updateFromRaw :: RawUpdate -> IO ()
     updateFromRaw RawUpdate {choices} =
@@ -100,33 +103,41 @@ perform evchan uri http ctx = do
 data Context = Context
   { -- | Model to use
     model :: T.Text,
-    timeline :: [Timeline.Entry]
+    timeline :: [Timeline.Entry],
+    tools :: [(T.Text, Tools.Description)]
   }
 
--- We don't specify a ToJSON instance because that would require us to also implement `toJSON`,
--- causing code duplication and no advantage
-contextEncoding :: Context -> Encoding
-contextEncoding Context {model, timeline} =
-  pairs
-    ( "stream" .= True
-        <> "model" .= model
-        <> pair
-          ("messages" :: Key)
-          ( list
-              id
-              $ encodeEntry <$> timeline
-              -- [ pairs ("role" .= ("user" :: T.Text) <> "content" .= prompt)
-              -- ]
-          )
-    )
-  where
-    encodeEntry (Timeline.PromptEntry p) = pairs ("role" .= ("user" :: T.Text) <> "content" .= p)
-    encodeEntry (Timeline.OutputEntry (LLMMessage {reasoning, content})) =
-      pairs
-        ( "role" .= ("user" :: T.Text)
-            <> "reasoning_content" .= reasoning
-            <> "content" .= content
-        )
+instance ToJSONEncoding Context where
+  toEncoding Context {model, timeline, tools} =
+    pairs $
+      mconcat
+        [ "stream" .= True,
+          "model" .= model,
+          pair "messages" (list encodeEntry timeline),
+          pair "tools" (list encodeTool tools)
+        ]
+    where
+      encodeEntry (Timeline.PromptEntry p) = pairs ("role" .= ("user" :: T.Text) <> "content" .= p)
+      encodeEntry (Timeline.OutputEntry (LLMMessage {reasoning, content, toolCalls})) =
+        pairs $
+          mconcat
+            [ "role" .= ("user" :: T.Text),
+              "reasoning_content" .= reasoning,
+              "content" .= content,
+              pair "tool_calls" $ list encodeToolCall (IntMap.elems toolCalls)
+            ]
+      encodeTool (name, tool) = toEncoding $ Tools.NamedDescription name tool
+
+      encodeToolCall Tools.Call {id = id', name, parameters} =
+        pairs $
+          mconcat
+            ( case id' of
+                Nothing -> []
+                Just id'' -> ["id" .= id'']
+                ++ [ "type" .= ("function" :: T.Text),
+                     pair "function" (pairs $ "arguments" .= parameters <> "name" .= name)
+                   ]
+            )
 
 data Update
   = UpdateMessage {delta :: LLMMessage}
@@ -153,8 +164,26 @@ instance FromJSON Choice where
                 . fmap
                   ( \d ->
                       LLMMessage
-                        <$> (untab <$> d .:? "reasoning_content" .!= "")
-                        <*> (untab <$> d .:? "content" .!= "")
+                        <$> (untab <$> d .:? "reasoning_content" .!= T.empty)
+                        <*> (untab <$> d .:? "content" .!= T.empty)
+                        <*> ( mconcat
+                                <$> (d .:? "tool_calls" .!= [] >>= (sequence . fmap parseTools))
+                            )
                   )
           )
+    where
+      parseTools :: Object -> Parser (IntMap.IntMap Tools.Call)
+      parseTools t = do
+        fun <- t .: "function"
+        IntMap.singleton
+          <$> (t .: "index")
+          <*> ( Tools.Call
+                  <$> t .:? "id"
+                  -- We treat the name like the arguments - starts empty and is appended onto.  God
+                  -- knows if this is how the API is meant to be understood, but it works with a
+                  -- well-behaved server anyways.
+                  <*> (untab <$> fun .:? "name" .!= T.empty)
+                  -- Untabbing this might become an issue.  We'll deal with it when it does.
+                  <*> (untab <$> fun .:? "arguments" .!= T.empty)
+              )
   parseJSON _ = mempty

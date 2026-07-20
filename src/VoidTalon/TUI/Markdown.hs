@@ -1,13 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
-module VoidTalon.TUI.Markdown (inlineWidget, docWidget, markdownWidget, wordWrap) where
+module VoidTalon.TUI.Markdown
+  ( inlineWidget,
+    docWidget,
+    markdownWidget,
+    wordWrap,
+    highlightedCode,
+  )
+where
 
 import Brick
 import qualified Brick.BorderMap as BorderMap
 import Brick.Widgets.Border (borderWithLabel, hBorder)
+import Brick.Widgets.Center (hCenter)
+import Brick.Widgets.Table (ColumnAlignment (..), renderTable, setColAlignment, table)
 import Commonmark (ListType (BulletList, OrderedList), commonmarkWith)
+import Commonmark.Extensions (ColAlignment (..))
 import Data.Bits ((.|.))
+import Data.Functor.Identity (Identity (runIdentity))
 import Data.List (groupBy)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, isJust)
@@ -21,6 +32,7 @@ import Graphics.Vty
     bold,
     currentAttr,
     defAttr,
+    green,
     horizCat,
     imageHeight,
     imageWidth,
@@ -28,17 +40,13 @@ import Graphics.Vty
     text',
     underline,
     vertCat,
-    withStyle, green,
+    withStyle,
   )
 import Graphics.Vty.Attributes (MaybeDefault (SetTo))
+import Lens.Micro
 import qualified Skylighting as SL
 import VoidTalon.Markdown as M
 import qualified VoidTalon.TUI.Types as TT
-import Lens.Micro
-import Data.Functor.Identity (Identity(runIdentity))
-import Brick.Widgets.Table (ColumnAlignment(..), table, setColAlignment, renderTable)
-import Commonmark.Extensions (ColAlignment(..))
-import Brick.Widgets.Center (hCenter)
 
 codeAttr :: Attr -> Attr
 codeAttr a = a {attrBackColor = SetTo $ Color240 $ 241 - 16}
@@ -60,7 +68,7 @@ linkAttr url a =
     underline
 
 mathAttr :: Attr -> Attr
-mathAttr a = a { attrForeColor = SetTo green }
+mathAttr a = a {attrForeColor = SetTo green}
 
 inlineWidget :: M.Inline -> Widget a
 inlineWidget inl = lineWrapWidget $ do
@@ -133,7 +141,7 @@ docWidget = vBox . widgs
       ]
     widgs (DocCodeBlock lang t) = pure $
       case SL.lookupSyntax lang SL.defaultSyntaxMap of
-        Just syntax -> uncurry borderWithLabel $ highlightedCode syntax t
+        Just syntax -> borderWithLabel (txt syntax.sName) $ highlightedCode syntax t
         Nothing -> borderWithLabel (txt lang) $ txtWrap t -- Unknown language
     widgs (DocQuote t) = pure $ Widget hInner vInner $ do
       c <- getContext
@@ -149,15 +157,14 @@ docWidget = vBox . widgs
       where
         inner@(Widget hInner vInner _) = docWidget t
     widgs (DocTable _ []) = []
-    widgs (DocTable align rows@(hdr:_)) = pure $ Widget Greedy Fixed $ do
+    widgs (DocTable align rows@(hdr : _)) = pure $ Widget Greedy Fixed $ do
       c <- getContext
       let nhdrs = length hdr
       -- Width that's available to fill for each cell if split evenly
       let availWidth = ((c.availWidth - 1) `div` nhdrs) - 1
       let tab = table $ (hLimit availWidth . inlineWidget <$>) <$> rows
-      let tab' = foldr ($) tab $ uncurry setColAlignment <$> zip (alignment <$> align) [0..]
+      let tab' = foldr ($) tab $ uncurry setColAlignment <$> zip (alignment <$> align) [0 ..]
       render $ renderTable tab'
-
       where
         alignment :: ColAlignment -> ColumnAlignment
         alignment LeftAlignedCol = AlignLeft
@@ -193,9 +200,8 @@ wordWrap f len ws = inner ws
 highlightedCode ::
   SL.Syntax ->
   T.Text ->
-  -- | (header, body)
-  (Widget a, Widget a)
-highlightedCode syntax t = (txt syntax.sName,) $ case tokResult of
+  Widget a
+highlightedCode syntax t = case tokResult of
   Left _ -> txtWrap t -- Error, fallback to unhighlighted text
   Right sourceLines -> lineWrapWidget $ pure $ (tokImage <$>) <$> sourceLines
   where

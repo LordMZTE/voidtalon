@@ -4,6 +4,7 @@ module VoidTalon.TUI.Types
     warningA,
     barA,
     selectedA,
+    toolTitleA,
     bakedWidget,
   )
 where
@@ -31,6 +32,10 @@ barA = attrName "bar"
 -- | Attribute name for selected timeline entries
 selectedA :: AttrName
 selectedA = attrName "selected"
+
+-- | Attribute name used for tool call titles
+toolTitleA :: AttrName
+toolTitleA = attrName "toolTitle"
 
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into

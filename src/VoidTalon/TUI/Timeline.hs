@@ -4,13 +4,18 @@ module VoidTalon.TUI.Timeline (entryWidget, draw, editEntry) where
 
 import Brick
 import Brick.Widgets.Border
+import Brick.Widgets.Center
 import Data.Function (applyWhen)
+import qualified Data.IntMap as IntMap
+import qualified Data.Map.Lazy as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
-import VoidTalon.TUI.Markdown (markdownWidget)
-import VoidTalon.TUI.Types (Name (..), selectedA)
+import Skylighting as SL
+import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
+import VoidTalon.TUI.Types (Name (..), selectedA, toolTitleA)
 import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
+import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (editInEditor)
 
 messagePadding :: Padding
@@ -26,16 +31,24 @@ entryWidget sel (TL.PromptEntry p) =
         . padLeft messagePadding
         . border
         $ markdownWidget "prompt" p
-entryWidget sel (TL.OutputEntry (TL.LLMMessage reasoning reply)) =
+entryWidget sel (TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls)) =
   applyWhen sel (withAttr selectedA) inner
   where
-    inner =
-      padRight messagePadding $
-        if T.null reasoning
-          then replyWidget
-          else reasoningWidget <=> replyWidget
+    inner = padRight messagePadding $ vBox widgets
+    widgets =
+      (if T.null reasoning then [] else [reasoningWidget])
+        ++ [replyWidget]
+        ++ (toolsWidget <$> IntMap.elems toolCalls)
+
     reasoningWidget = borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
     replyWidget = markdownWidget "reply" reply
+
+    toolsWidget Tools.Call {id = _, name, parameters} =
+      hCenter $
+        borderWithLabel (withAttr toolTitleA $ txt name) $
+          highlightedCode jsonSyntax parameters
+
+    jsonSyntax = SL.defaultSyntaxMap Map.! "JSON"
 
 draw :: Maybe Int -> [TL.Entry] -> Widget TT.Name
 draw focus =
@@ -59,11 +72,15 @@ draw focus =
 editEntry :: TL.Entry -> IO TL.Entry
 editEntry (TL.PromptEntry t) =
   TL.PromptEntry . LT.toStrict <$> (editInEditor "md" $ LT.fromStrict t)
-editEntry (TL.OutputEntry (TL.LLMMessage reasoning content)) = do
+editEntry (TL.OutputEntry (TL.LLMMessage reasoning content toolCalls)) = do
   let separator = "\n" <> T.replicate 100 "=" <> "\n"
   let toEdit = LT.fromChunks [reasoning, separator, content]
   edited <- editInEditor "md" toEdit
   pure . TL.OutputEntry $ case LT.splitOn (LT.fromStrict separator) edited of
     [] -> mempty
-    [content'] -> TL.LLMMessage "" (LT.toStrict content')
-    reasoning' : rest -> TL.LLMMessage (LT.toStrict reasoning') (LT.toStrict $ mconcat rest)
+    [content'] -> TL.LLMMessage T.empty (LT.toStrict content') toolCalls
+    reasoning' : rest ->
+      TL.LLMMessage
+        (LT.toStrict reasoning')
+        (LT.toStrict $ mconcat rest)
+        toolCalls
