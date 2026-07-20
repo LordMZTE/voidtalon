@@ -7,6 +7,7 @@ module VoidTalon.Tools
     Plan,
     Invocation,
     Tool (..),
+    CallID,
     Call (..),
   )
 where
@@ -15,7 +16,6 @@ import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding (list, pair)
 import Data.Aeson.Key (fromText)
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 import VoidTalon.Util (ToJSONEncoding (..))
 import Control.Applicative ((<|>))
 
@@ -75,18 +75,20 @@ type Plan = [(T.Text, T.Text)]
 
 -- | A pair consisting of a plan for invoking a tool and an action that runs the tool and returns
 -- some output to give to the agent.
-type Invocation = (Plan, IO LT.Text)
+type Invocation = (Plan, IO T.Text)
 
 data Tool = Tool
   { description :: Description,
     -- | Called when the LLM wants to run this tool.  This is given the parameters to call with,
     -- which hopefully matches the schema from @description@, and returns an invocation or an error
     -- if the parameters were invalid.
-    invoke :: Value -> Result Invocation
+    invoke :: T.Text -> Either String Invocation
   }
 
+type CallID = Maybe T.Text
+
 data Call = Call
-  { id :: Maybe T.Text,
+  { id :: CallID,
     name :: T.Text,
     parameters :: T.Text
   }

@@ -5,6 +5,8 @@ module VoidTalon.TUI.Types
     barA,
     selectedA,
     toolTitleA,
+    toolResultBorderA,
+    toolPlanHeaderA,
     bakedWidget,
   )
 where
@@ -19,6 +21,7 @@ data Name
   = NPromptField
   | NTimelineVP
   | NTimelineEntry Int
+  | NToolDialog
   deriving (Eq, Ord, Show)
 
 -- | Attributes for warning text
@@ -36,6 +39,14 @@ selectedA = attrName "selected"
 -- | Attribute name used for tool call titles
 toolTitleA :: AttrName
 toolTitleA = attrName "toolTitle"
+
+-- | Attribute name used for the border around tool response timeline entries.
+toolResultBorderA :: AttrName
+toolResultBorderA = attrName "toolResultBorder"
+
+-- | Attribute name used for the headers above plan entries in tħe tool confirmation dialog.
+toolPlanHeaderA :: AttrName
+toolPlanHeaderA = attrName "toolPlanHeader"
 
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into

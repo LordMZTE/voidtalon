@@ -4,7 +4,7 @@ module VoidTalon.Tools.ReadFile (tool) where
 
 import Data.Aeson
 import qualified Data.Text as T
-import qualified Data.Text.Lazy.IO as LTIO
+import qualified Data.Text.IO as TIO
 import VoidTalon.Tools
 
 description :: Description
@@ -25,12 +25,12 @@ instance FromJSON Parameters where
     Parameters <$> (v .: "path")
   parseJSON _ = mempty
 
-invoke :: Value -> Result Invocation
+invoke :: T.Text -> Either String Invocation
 invoke val = do
-  Parameters path <- fromJSON val
+  Parameters path <- eitherDecodeStrictText val
   pure ([("Path", T.pack path)], perform path)
   where
-    perform = LTIO.readFile
+    perform = TIO.readFile
 
 tool :: Tool
 tool = Tool {description, invoke}

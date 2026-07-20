@@ -126,8 +126,15 @@ instance ToJSONEncoding Context where
               "content" .= content,
               pair "tool_calls" $ list encodeToolCall (IntMap.elems toolCalls)
             ]
-      encodeTool (name, tool) = toEncoding $ Tools.NamedDescription name tool
+      encodeEntry (Timeline.ToolResultEntry {id = id', content}) =
+        pairs $
+          mconcat $
+            case id' of
+              Just id'' -> ["tool_call_id" .= id'']
+              Nothing -> []
+              ++ ["role" .= ("tool" :: T.Text), "content" .= content]
 
+      encodeTool (name, tool) = toEncoding $ Tools.NamedDescription name tool
       encodeToolCall Tools.Call {id = id', name, parameters} =
         pairs $
           mconcat
