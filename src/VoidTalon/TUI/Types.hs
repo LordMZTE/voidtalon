@@ -1,6 +1,9 @@
 module VoidTalon.TUI.Types
   ( Event (..),
     Name (..),
+    RunState (..),
+    isRunning,
+    isStopped,
     warningA,
     barA,
     selectedA,
@@ -13,6 +16,8 @@ where
 
 import Brick (AttrName, Result, Size (Fixed), attrName)
 import Brick.Types (Widget (Widget))
+import Control.Concurrent (ThreadId)
+import qualified Data.Text as T
 import VoidTalon.Net.Completions (Update)
 
 data Event = EvCompletionUpdate Update
@@ -23,6 +28,17 @@ data Name
   | NTimelineEntry Int
   | NToolDialog
   deriving (Eq, Ord, Show)
+
+data RunState
+  = RunStateStopped T.Text -- Stopped with reason
+  | RunStateRunning ThreadId -- Running with given completions thread
+
+isRunning :: RunState -> Bool
+isRunning (RunStateStopped _) = False
+isRunning (RunStateRunning _) = True
+
+isStopped :: RunState -> Bool
+isStopped = not . isRunning
 
 -- | Attributes for warning text
 warningA :: AttrName

@@ -10,7 +10,7 @@ module VoidTalon.Net.Completions
   )
 where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, ThreadId)
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Aeson.Types (Parser)
@@ -50,13 +50,12 @@ perform ::
   Manager ->
   -- | Context to send the request with
   Context ->
-  IO ()
+  IO ThreadId
 perform evchan uri http ctx = do
   let endpoint = uri & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req = req' {method = "POST", requestBody = RequestBodyLBS $ mkCtxRequestBody ctx}
-  _ <- forkIO $ withResponse req http handleResponse
-  pure ()
+  forkIO $ withResponse req http handleResponse
   where
     foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder
 

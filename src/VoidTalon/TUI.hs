@@ -24,7 +24,6 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List (find)
-import Data.Maybe (fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
@@ -44,6 +43,7 @@ import qualified VoidTalon.Tools as Tools
 import qualified VoidTalon.Tools.ReadFile
 import VoidTalon.Util (remove)
 import qualified VoidTalon.Util as Util
+import Control.Concurrent (killThread)
 
 data State = State
   { config :: Config,
@@ -56,8 +56,7 @@ data State = State
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
     model :: ModelInfo,
-    -- | Nothing if running, Just reason_string if stopped.
-    stopReason :: Maybe T.Text,
+    runState :: RunState,
     -- | Index of the element in the timeline that's focused.  Starts from the bottom.
     timelineFocus :: Int,
     -- | Tools that the model requested but the user hasn't reviewed yet.
@@ -71,7 +70,7 @@ makeLensesFor
   [ ("focus", "stateFocusL"),
     ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
-    ("stopReason", "stateStopReasonL"),
+    ("runState", "stateRunStateL"),
     ("timelineFocus", "stateTimelineFocusL"),
     ("pendingTools", "statePendingToolsL")
   ]
@@ -88,7 +87,7 @@ mkInitialState config evchan httpMan model =
         focus = focusRing [NPromptField, NTimelineVP],
         promptEditor = editorText NPromptField Nothing "",
         timeline = [],
-        stopReason = Just "stop",
+        runState = RunStateStopped "stop",
         timelineFocus = 0,
         pendingTools = [],
         tools
@@ -152,10 +151,12 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
     statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
-    statusBarRight = txt $ fromMaybe "running" st.stopReason
+    statusBarRight = txt $ case st.runState of
+      RunStateStopped reason -> reason
+      RunStateRunning _ -> "running"
     statusBarLeft = txt $ globalHelp <> localHelp
 
-    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl"
+    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel"
     localHelp =
       if null st.pendingTools
         then case effectiveFocus st of
@@ -177,6 +178,15 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
   -- If we've just focused the timeline, reset focused element to last entry
   when (cur == Just NTimelineVP) $ stateTimelineFocusL .= 0
   makeVisible $ NTimelineEntry 0
+-- Stop ongoing completions with <C-c>
+handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
+  st <- get
+  case st.runState of
+    RunStateStopped _ -> unless (null st.pendingTools) $
+      statePendingToolsL .= []
+    RunStateRunning thread -> do
+      liftIO $ killThread thread
+      stateRunStateL .= RunStateStopped "cancelled"
 -- TODO: <> on ByteString is slow (O(n)), optimize
 handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
   -- append text to output
@@ -195,7 +205,7 @@ handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
        in when isAtBottom $ vScrollToEnd outputVPScroll
     Nothing -> pure ()
 handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) = do
-  stateStopReasonL .= Just reason
+  stateRunStateL .= RunStateStopped reason
   st <- get
   case st.timeline of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
@@ -230,7 +240,7 @@ handleEvent ev = do
       (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
         statePromptEditorL %= applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) -> do
-        let running = isNothing st.stopReason
+        let running = isRunning st.runState
         let prompt = T.intercalate "\n" $ getEditContents $ st.promptEditor
         unless (running || T.null prompt) $ do
           -- clear entry
@@ -271,7 +281,7 @@ handleEvent ev = do
             (stateTimelineL . ix st.timelineFocus)
             (liftIO . Timeline.editEntry)
             st
-      (VtyEvent (V.EvKey V.KEnter [])) -> unless (isNothing st.stopReason) $ do
+      (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
         -- tail of the timeline with the selected entry being the last one
         let tl' = drop st.timelineFocus $ st.timeline
         let tl =
@@ -298,7 +308,7 @@ handleEvent ev = do
             let entry = Timeline.ToolResultEntry {id = id', content = content}
             stateTimelineL %= (entry :)
             statePendingToolsL .= rest
-            when (null rest && isJust st.stopReason) startCompletions
+            when (null rest && isStopped st.runState) startCompletions
        in case (st.pendingTools, ev) of
             ((id', _, (_, invoke)) : rest, VtyEvent (V.EvKey (V.KChar 'y') [])) -> do
               result <-
@@ -320,9 +330,6 @@ handleEvent ev = do
 startCompletions :: EventM n State ()
 startCompletions = do
   st <- get
-  -- set runStatus to running
-  stateStopReasonL .= Nothing
-
   -- start completions request
   let ctx =
         Completions.Context
@@ -330,7 +337,7 @@ startCompletions = do
             timeline = reverse st.timeline,
             tools = ((.description) <$>) <$> st.tools
           }
-  liftIO $
+  thread <- liftIO $
     Completions.perform
       ( writeBChan (st.evchan)
           . EvCompletionUpdate
@@ -338,3 +345,6 @@ startCompletions = do
       (st.config).connection.base_url.inner
       (st.httpMan)
       ctx
+
+  -- set runStatus to running
+  stateRunStateL .= RunStateRunning thread
