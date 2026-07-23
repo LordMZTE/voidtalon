@@ -13,7 +13,9 @@ import VoidTalon.Tools
 description :: Description
 description =
   Description
-    { description = "Run a command in a POSIX-compliant shell",
+    { description =
+        "Run a command in a POSIX-compliant shell\n"
+          <> "Note that shell state (i.e. environment variables) is **NOT** preserved across tool calls.",
       schema =
         SchemaObject
           { properties =
