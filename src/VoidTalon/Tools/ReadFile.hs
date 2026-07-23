@@ -1,8 +1,10 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module VoidTalon.Tools.ReadFile (tool) where
 
 import Data.Aeson
+import Data.Char (isSpace)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import VoidTalon.Tools
@@ -30,7 +32,14 @@ invoke val = do
   Parameters path <- eitherDecodeStrictText val
   pure ([("Path", T.pack path)], perform path)
   where
-    perform = TIO.readFile
+    perform =
+      fmap
+        ( \case
+            c | T.null c -> "<empty file>"
+            c | T.all isSpace c -> "<only whitespace>"
+            c -> c
+        )
+        . TIO.readFile
 
 tool :: Tool
 tool = Tool {description, invoke}

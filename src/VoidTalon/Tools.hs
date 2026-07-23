@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module VoidTalon.Tools
@@ -9,6 +10,7 @@ module VoidTalon.Tools
     Tool (..),
     CallID,
     Call (..),
+    postProcessToolOutput,
   )
 where
 
@@ -16,6 +18,7 @@ import Control.Applicative ((<|>))
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding (list, pair)
 import Data.Aeson.Key (fromText)
+import Data.Char (isSpace)
 import qualified Data.Text as T
 import VoidTalon.Util (ToJSONEncoding (..))
 
@@ -99,3 +102,11 @@ instance Semigroup Call where
 
 instance Monoid Call where
   mempty = Call Nothing T.empty T.empty
+
+-- | This should be called on tool output before passing the result to the LLM.  This mostly handles
+-- empty/whitespace-only output, since that usually causes confusion.
+postProcessToolOutput :: T.Text -> T.Text
+postProcessToolOutput = \case
+  res | T.null res -> "<no tool output>"
+  res | T.all isSpace res -> "<only whitespace in tool output>"
+  res -> res

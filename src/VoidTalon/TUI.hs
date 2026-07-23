@@ -41,7 +41,6 @@ import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
-import qualified VoidTalon.Tools.ReadFile
 import VoidTalon.Util (remove)
 import qualified VoidTalon.Util as Util
 
@@ -76,8 +75,8 @@ makeLensesFor
   ]
   ''State
 
-mkInitialState :: Config -> BChan Event -> HTTP.Manager -> ModelInfo -> IO State
-mkInitialState config evchan httpMan model =
+mkInitialState :: Config -> BChan Event -> HTTP.Manager -> ModelInfo -> [(T.Text, Tools.Tool)] -> IO State
+mkInitialState config evchan httpMan model tools =
   pure $
     State
       { config,
@@ -90,10 +89,8 @@ mkInitialState config evchan httpMan model =
         runState = RunStateStopped "stop",
         timelineFocus = 0,
         pendingTools = [],
-        tools
+        tools = TM.newManager tools
       }
-  where
-    tools = TM.newManager [("read_file", VoidTalon.Tools.ReadFile.tool)]
 
 type App' = App State Event Name
 
@@ -332,7 +329,7 @@ handleEvent ev = do
                 suspendAndResume' $
                   try invoke <&> \case
                     Left err -> T.pack $ "Error: " <> (show (err :: SomeException))
-                    Right res -> res
+                    Right res -> Tools.postProcessToolOutput res
               finishTool id' result rest
             ((id', _, _) : rest, VtyEvent (V.EvKey (V.KChar 'n') [])) ->
               finishTool id' "Error: user denied tool invocation" rest

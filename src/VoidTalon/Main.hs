@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module VoidTalon.Main (main) where
 
 import Brick.BChan (newBChan)
@@ -9,6 +11,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Graphics.Vty as Vty
 import qualified Network.HTTP.Client as HTTP
@@ -19,6 +22,10 @@ import qualified VoidTalon.CLI as CLI
 import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Net.Models as Models
 import qualified VoidTalon.TUI as TUI
+import qualified VoidTalon.Tools as Tools
+import qualified VoidTalon.Tools.ReadFile
+import qualified VoidTalon.Tools.RunCommand
+import qualified VoidTalon.Tools.WriteFile
 
 main :: IO ()
 main = do
@@ -41,7 +48,7 @@ main = do
   -- We leave space for this many events because we might get incoming tokens while the user has
   -- the editor open.  In order to not block the network connection, we need to buffer those events.
   chan <- newBChan 1024
-  initState <- TUI.mkInitialState config chan httpMan model
+  initState <- TUI.mkInitialState config chan httpMan model builtinTools
   (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app initState
   Vty.shutdown vty
 
@@ -56,3 +63,10 @@ readConfig path = do
       )
         >> exitFailure
     Right conf -> pure $ decodeUtf8 conf
+
+builtinTools :: [(T.Text, Tools.Tool)]
+builtinTools =
+  [ ("read_file", VoidTalon.Tools.ReadFile.tool),
+    ("write_file", VoidTalon.Tools.WriteFile.tool),
+    ("run_command", VoidTalon.Tools.RunCommand.tool)
+  ]
