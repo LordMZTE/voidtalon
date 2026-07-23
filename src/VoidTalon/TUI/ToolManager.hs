@@ -62,7 +62,7 @@ handleEvent :: BrickEvent n e -> EventM n Manager ()
 handleEvent (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   m <- get
   managerSelectedL .= case m.selected + 1 of
-    n | n > length m.states -> 0
+    n | n >= length m.states -> 0
     n -> n
 handleEvent (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
@@ -81,11 +81,11 @@ draw Manager {states, selected} =
 
 drawState :: Bool -> ToolState -> Widget n
 drawState selected (enabled, name, Tools.Tool {description = Tools.Description {description}}) =
-  vBox
-    [ withAttr (applyWhen selected (<> toolManagerSelectedA) toolManagerToolTitleA) $
-        txt (check <> name),
-      txtWrap description
-    ]
+  applyWhen selected (withDefAttr toolManagerSelectedA) $
+    vBox
+      [ withAttr toolManagerToolTitleA $ txt (check <> name),
+        txtWrap description
+      ]
   where
     check = if enabled then "● " else "○ "
 
