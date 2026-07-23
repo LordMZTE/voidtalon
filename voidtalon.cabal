@@ -23,6 +23,7 @@ executable vt
       VoidTalon.TUI
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.Timeline
+      VoidTalon.TUI.ToolManager
       VoidTalon.TUI.Types
       VoidTalon.Timeline
       VoidTalon.Util

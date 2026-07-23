@@ -17,13 +17,13 @@ import Brick.Widgets.Border
 import Brick.Widgets.Center (centerLayer)
 import Brick.Widgets.Edit
 import Control.Applicative ((<|>))
+import Control.Concurrent (killThread)
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
 import qualified Data.IntMap.Strict as IntMap
-import Data.List (find)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
@@ -37,13 +37,13 @@ import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
 import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
+import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
 import qualified VoidTalon.Tools.ReadFile
 import VoidTalon.Util (remove)
 import qualified VoidTalon.Util as Util
-import Control.Concurrent (killThread)
 
 data State = State
   { config :: Config,
@@ -62,8 +62,7 @@ data State = State
     -- | Tools that the model requested but the user hasn't reviewed yet.
     -- (id, name, invocation)
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
-    -- Tools by-name
-    tools :: [(T.Text, Tools.Tool)]
+    tools :: TM.Manager
   }
 
 makeLensesFor
@@ -72,7 +71,8 @@ makeLensesFor
     ("timeline", "stateTimelineL"),
     ("runState", "stateRunStateL"),
     ("timelineFocus", "stateTimelineFocusL"),
-    ("pendingTools", "statePendingToolsL")
+    ("pendingTools", "statePendingToolsL"),
+    ("tools", "stateToolsL")
   ]
   ''State
 
@@ -84,7 +84,7 @@ mkInitialState config evchan httpMan model =
         evchan,
         httpMan,
         model,
-        focus = focusRing [NPromptField, NTimelineVP],
+        focus = focusRing [NPromptField, NTimelineVP, NToolManager],
         promptEditor = editorText NPromptField Nothing "",
         timeline = [],
         runState = RunStateStopped "stop",
@@ -93,7 +93,7 @@ mkInitialState config evchan httpMan model =
         tools
       }
   where
-    tools = [("read_file", VoidTalon.Tools.ReadFile.tool)]
+    tools = TM.newManager [("read_file", VoidTalon.Tools.ReadFile.tool)]
 
 type App' = App State Event Name
 
@@ -113,7 +113,9 @@ app =
               (selectedA, fg V.blue),
               (toolTitleA, (fg V.red) {V.attrStyle = V.SetTo V.bold}),
               (toolResultBorderA, fg V.red),
-              (toolPlanHeaderA, (fg V.magenta) {V.attrStyle = V.SetTo V.bold})
+              (toolPlanHeaderA, (fg V.magenta) {V.attrStyle = V.SetTo V.bold}),
+              (toolManagerToolTitleA, (fg V.cyan) {V.attrStyle = V.SetTo V.bold}),
+              (toolManagerSelectedA, (bg (V.Color240 $ 240 - 16)))
             ]
     }
 
@@ -126,18 +128,30 @@ effectiveFocus st = if null st.pendingTools then focusGetCurrent st.focus else J
 draw :: State -> [Widget Name]
 draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
   where
-    overlays = case st.pendingTools of
-      (_, name, (plan, _)) : _ ->
-        let entry hdr t = [withAttr toolPlanHeaderA $ txtWrap hdr, border $ txtWrap t]
-            boxWidgets = concatMap (uncurry entry) plan
-         in pure
+    overlays =
+      case st.pendingTools of
+        (_, name, (plan, _)) : _ ->
+          let entry hdr t = [withAttr toolPlanHeaderA $ txtWrap hdr, border $ txtWrap t]
+              boxWidgets = concatMap (uncurry entry) plan
+           in pure
+                . centerLayer
+                . hLimitPercent overlaySizeLimitPercent
+                . borderWithLabel (txt "Tool Call Request")
+                . vBox
+                $ (withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name)
+                  : (txt T.empty) -- empty line for spacing
+                  : boxWidgets
+        _ -> []
+        -- intentionally not @effectiveFocus@ to render overlays even when they're not focused.
+        ++ case focusGetCurrent st.focus of
+          Just NToolManager ->
+            pure
               . centerLayer
-              . borderWithLabel (txt "Tool Call Request")
-              . vBox
-              $ (withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name)
-                : (txt T.empty) -- empty line for spacing
-                : boxWidgets
-      _ -> []
+              . hLimitPercent overlaySizeLimitPercent
+              . vLimitPercent overlaySizeLimitPercent
+              . borderWithLabel (txt "Manage Tools")
+              $ TM.draw st.tools
+          _ -> []
     output =
       Timeline.draw
         ( if (effectiveFocus st == Just NTimelineVP)
@@ -158,12 +172,12 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
 
     globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel"
     localHelp =
-      if null st.pendingTools
-        then case effectiveFocus st of
-          Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
-          Just NTimelineVP -> " | k/j Move | d Delete | e Edit | <CR> Regen"
-          _ -> ""
-        else " | y Confirm | n Deny | s Spoof"
+      case effectiveFocus st of
+        Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
+        Just NTimelineVP -> " | k/j Move | d Delete | e Edit | <CR> Regen"
+        Just NToolDialog -> " | y Confirm | n Deny | s Spoof"
+        Just NToolManager -> TM.helpText
+        _ -> ""
 
 handleEvent :: BrickEvent Name Event -> EventM Name State ()
 -- Exit with <C-q>
@@ -182,8 +196,9 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
 handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
   st <- get
   case st.runState of
-    RunStateStopped _ -> unless (null st.pendingTools) $
-      statePendingToolsL .= []
+    RunStateStopped _ ->
+      unless (null st.pendingTools) $
+        statePendingToolsL .= []
     RunStateRunning thread -> do
       liftIO $ killThread thread
       stateRunStateL .= RunStateStopped "cancelled"
@@ -226,11 +241,12 @@ handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) = do
       State ->
       Tools.Call ->
       Either (Tools.CallID, String) (Tools.CallID, T.Text, Tools.Invocation)
-    prepareInvocation st Tools.Call {id = id', name, parameters} = case find ((name ==) . fst) st.tools of
-      Just (_, Tools.Tool {invoke}) -> case invoke parameters of
-        Left err -> Left (id', err)
-        Right res -> Right (id', name, res)
-      Nothing -> Left (id', "No such tool exists")
+    prepareInvocation st Tools.Call {id = id', name, parameters} =
+      case TM.findTool st.tools name of
+        Just (Tools.Tool {invoke}) -> case invoke parameters of
+          Left err -> Left (id', err)
+          Right res -> Right (id', name, res)
+        Nothing -> Left (id', "No such tool exists")
 handleEvent ev = do
   st <- get
   case effectiveFocus st of
@@ -298,6 +314,7 @@ handleEvent ev = do
           stateTimelineL .= tl
           startCompletions
       _ -> pure ()
+    Just NToolManager -> zoom stateToolsL $ TM.handleEvent ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -330,21 +347,22 @@ handleEvent ev = do
 startCompletions :: EventM n State ()
 startCompletions = do
   st <- get
-  -- start completions request
   let ctx =
         Completions.Context
           { model = st.model.id,
             timeline = reverse st.timeline,
-            tools = ((.description) <$>) <$> st.tools
+            tools = TM.activeTools st.tools
           }
-  thread <- liftIO $
-    Completions.perform
-      ( writeBChan (st.evchan)
-          . EvCompletionUpdate
-      )
-      (st.config).connection.base_url.inner
-      (st.httpMan)
-      ctx
+  -- start completions request
+  thread <-
+    liftIO $
+      Completions.perform
+        ( writeBChan (st.evchan)
+            . EvCompletionUpdate
+        )
+        (st.config).connection.base_url.inner
+        (st.httpMan)
+        ctx
 
   -- set runStatus to running
   stateRunStateL .= RunStateRunning thread

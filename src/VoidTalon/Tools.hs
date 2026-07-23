@@ -12,12 +12,12 @@ module VoidTalon.Tools
   )
 where
 
+import Control.Applicative ((<|>))
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding (list, pair)
 import Data.Aeson.Key (fromText)
 import qualified Data.Text as T
 import VoidTalon.Util (ToJSONEncoding (..))
-import Control.Applicative ((<|>))
 
 data Schema
   = SchemaObject
@@ -50,7 +50,8 @@ instance ToJSONEncoding Schema where
 
 -- | A description that tells the LLM what this tool does and how to use it.
 data Description = Description
-  { description :: T.Text,
+  { -- | An explanation of what the tool does.  Must not contain ANSI escapes or carriage returns.
+    description :: T.Text,
     schema :: Schema
   }
 

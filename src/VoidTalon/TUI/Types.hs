@@ -10,7 +10,10 @@ module VoidTalon.TUI.Types
     toolTitleA,
     toolResultBorderA,
     toolPlanHeaderA,
+    toolManagerToolTitleA,
+    toolManagerSelectedA,
     bakedWidget,
+    overlaySizeLimitPercent,
   )
 where
 
@@ -27,6 +30,7 @@ data Name
   | NTimelineVP
   | NTimelineEntry Int
   | NToolDialog
+  | NToolManager
   deriving (Eq, Ord, Show)
 
 data RunState
@@ -64,7 +68,19 @@ toolResultBorderA = attrName "toolResultBorder"
 toolPlanHeaderA :: AttrName
 toolPlanHeaderA = attrName "toolPlanHeader"
 
+-- | Attribute name used for the titles of tools in the tool manager
+toolManagerToolTitleA :: AttrName
+toolManagerToolTitleA = attrName "toolManagerToolTitle"
+
+-- | Attribute name for a selected tool entry in the tool manager
+toolManagerSelectedA :: AttrName
+toolManagerSelectedA = attrName "toolManagerSelected"
+
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into
 bakedWidget :: Result a -> Widget a
 bakedWidget = Widget Fixed Fixed . pure
+
+-- | The limit of the available size in percent that should be used for overlays, if appropriate.
+overlaySizeLimitPercent :: Int
+overlaySizeLimitPercent = 75
