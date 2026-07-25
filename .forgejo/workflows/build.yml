@@ -1,0 +1,15 @@
+on: [push]
+
+jobs:
+  compile:
+    runs-on: docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: actions/setup-haskell@v2
+
+      - name: Build
+        run: |
+          cabal build
