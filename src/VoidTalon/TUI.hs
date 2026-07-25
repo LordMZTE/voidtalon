@@ -112,7 +112,12 @@ app =
               (toolResultBorderA, fg V.red),
               (toolPlanHeaderA, (fg V.magenta) {V.attrStyle = V.SetTo V.bold}),
               (toolManagerToolTitleA, (fg V.cyan) {V.attrStyle = V.SetTo V.bold}),
-              (toolManagerSelectedA, (bg (V.Color240 $ 240 - 16)))
+              (toolManagerSelectedA, (bg (V.Color240 $ 240 - 16))),
+              ( toolManagerSchemaTypeA,
+                (V.red `on` (V.Color240 $ 235 - 16))
+                  { V.attrStyle = V.SetTo V.bold
+                  }
+              )
             ]
     }
 

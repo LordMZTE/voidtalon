@@ -13,14 +13,15 @@ module VoidTalon.TUI.ToolManager
 where
 
 import Brick
+import Brick.Widgets.Border (vBorder)
 import Data.Function (applyWhen)
-import Data.List (find)
+import Data.List (find, (!?))
 import qualified Data.Text as T
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
-import VoidTalon.TUI.Types (toolManagerSelectedA, toolManagerToolTitleA)
+import VoidTalon.TUI.Types (toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
 import qualified VoidTalon.Tools as Tools
 
 -- | Current state of a registered tool.
@@ -75,9 +76,27 @@ handleEvent (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
 handleEvent _ = pure ()
 
 draw :: Manager -> Widget n
-draw Manager {states, selected} =
-  vBox $
-    (\(s, i) -> drawState (i == selected) s) <$> zip states [0 ..]
+draw Manager {states, selected} = hBox [list, vBorder, schemaView]
+  where
+    list = vBox $ (\(s, i) -> drawState (i == selected) s) <$> zip states [0 ..]
+    schemaView = case states !? selected of
+      Just (_, _, Tools.Tool {description}) -> schemaWidget description.schema
+      Nothing -> emptyWidget
+
+    typeWidget :: T.Text -> Widget n
+    typeWidget = withAttr toolManagerSchemaTypeA . txt
+
+    schemaWidget :: Tools.Schema -> Widget n
+    schemaWidget Tools.SchemaObject {properties, required} =
+      let top = (typeWidget "[OBJ]") <+> txtWrap (" req: " <> T.show required)
+          propertyWidget (name, schema) = txt (name <> ": ") <+> schemaWidget schema
+       in top <=> (padLeft (Pad 2) $ vBox $ propertyWidget <$> properties)
+    schemaWidget Tools.SchemaBool {description} =
+      typeWidget "[BOOL]" <+> padLeft (Pad 1) (txtWrap description)
+    schemaWidget Tools.SchemaInteger {description} =
+      typeWidget "[INT]" <+> padLeft (Pad 1) (txtWrap description)
+    schemaWidget Tools.SchemaString {description} =
+      typeWidget "[STRING]" <+> padLeft (Pad 1) (txtWrap description)
 
 drawState :: Bool -> ToolState -> Widget n
 drawState selected (enabled, name, Tools.Tool {description = Tools.Description {description}}) =
