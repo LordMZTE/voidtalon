@@ -1,8 +1,16 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module VoidTalon.Util (untab, editInEditor, remove, ToJSONEncoding (..)) where
+module VoidTalon.Util
+  ( untab,
+    editInEditor,
+    remove,
+    ToJSONEncoding (..),
+    SemiSemigroup (..),
+    BufferedBChan (..),
+  )
+where
 
 import Control.Exception (finally)
 import Control.Monad (replicateM)
@@ -16,6 +24,8 @@ import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import System.Process (callProcess)
 import System.Random.Stateful (globalStdGen, randomRM)
+import Brick.BChan (BChan, newBChan)
+import Data.IORef (IORef, newIORef)
 
 -- | Replaces all tabs with four spaces.  We do this because feeding tabs to VTY causes
 -- breakage, and it's cheapest to do here where all strings are still short.
@@ -55,3 +65,31 @@ class ToJSONEncoding a where
 -- with the language server.
 instance {-# OVERLAPPABLE #-} (J.ToJSON a) => ToJSONEncoding a where
   toEncoding = J.toEncoding
+
+-- | Like a Semigroup, but concatenation may not be possible in all cases
+class SemiSemigroup m where
+  (<>?) :: m -> m -> Maybe m
+
+-- | A wrapper around a BChan that can chunk events.  This is needed because Brick redraws the TUI
+-- after every event.  This makes no sense and needlessly slows down our application.  This is
+-- essentially used to implement the behavior that all pending events are consumed before we redraw
+-- the TUI again.
+data SemiSemigroup e => BufferedBChan e = BufferedBChan (BChan [e]) (IORef [e])
+
+newBufferedBChan :: SemiSemigroup e => IO (BufferedBChan e)
+newBufferedBChan = do
+  chan <- newBChan 1
+  buf <- newIORef []
+  pure $ BufferedBChan chan buf
+
+-- | Pushes a message to the BChan's buffer.
+pushBufferedBChan :: SemiSemigroup e => e -> [e] -> [e]
+pushBufferedBChan e [] = [e]
+pushBufferedBChan e (x:xs) = case x <>? e of
+  Just e' -> e':xs
+  Nothing -> e:x:xs
+
+-- | Attempt to send a message to the buffered channel, semigroupily buffering it if the channel is
+-- full.
+writeBufferedBChan :: e -> BufferedBChan e -> IO ()
+writeBufferedBChan = undefined
