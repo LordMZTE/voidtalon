@@ -10,7 +10,8 @@ module VoidTalon.Net.Completions
   )
 where
 
-import Control.Concurrent (forkIO, ThreadId)
+import Control.Concurrent (ThreadId, forkIO)
+import Control.Exception (finally)
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Aeson.Types (Parser)
@@ -19,6 +20,7 @@ import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (ord)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Data.Word (Word8)
 import Lens.Micro
@@ -33,7 +35,6 @@ import Network.HTTP.Client
   )
 import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
-import System.Directory.Internal.Prelude (fromMaybe)
 import System.FilePath ((</>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
@@ -44,6 +45,8 @@ import VoidTalon.Util (ToJSONEncoding (..), untab)
 perform ::
   -- | Consumer that will be called with incoming updates
   (Update -> IO ()) ->
+  -- | Action to be executed after everything else finished
+  (IO ()) ->
   -- | API base URL
   URI ->
   -- | HTTP connection Manager
@@ -51,11 +54,11 @@ perform ::
   -- | Context to send the request with
   Context ->
   IO ThreadId
-perform evchan uri http ctx = do
+perform evchan done uri http ctx = do
   let endpoint = uri & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req = req' {method = "POST", requestBody = RequestBodyLBS $ mkCtxRequestBody ctx}
-  forkIO $ withResponse req http handleResponse
+  forkIO $ (withResponse req http handleResponse) `finally` done
   where
     foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder
 

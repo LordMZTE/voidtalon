@@ -2,7 +2,6 @@
 
 module VoidTalon.Main (main) where
 
-import Brick.BChan (newBChan)
 import Brick.Main (customMainWithDefaultVty)
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
@@ -26,6 +25,7 @@ import qualified VoidTalon.Tools as Tools
 import qualified VoidTalon.Tools.ReadFile
 import qualified VoidTalon.Tools.RunCommand
 import qualified VoidTalon.Tools.WriteFile
+import VoidTalon.Util (BufferedBChan(ch), newBufferedBChan)
 
 main :: IO ()
 main = do
@@ -45,11 +45,9 @@ main = do
   model <- case models of
     m : _ -> pure m
     _ -> fail "The server reported an empty list of models!"
-  -- We leave space for this many events because we might get incoming tokens while the user has
-  -- the editor open.  In order to not block the network connection, we need to buffer those events.
-  chan <- newBChan 1024
+  chan <- newBufferedBChan
   initState <- TUI.mkInitialState config chan httpMan model builtinTools
-  (_, vty) <- customMainWithDefaultVty (Just chan) TUI.app initState
+  (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty
 
 readConfig :: FilePath -> IO Text

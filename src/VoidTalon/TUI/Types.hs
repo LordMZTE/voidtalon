@@ -22,9 +22,15 @@ import Brick (AttrName, Result, Size (Fixed), attrName)
 import Brick.Types (Widget (Widget))
 import Control.Concurrent (ThreadId)
 import qualified Data.Text as T
-import VoidTalon.Net.Completions (Update)
+import VoidTalon.Net.Completions (Update (UpdateMessage))
+import VoidTalon.Util (SemiSemigroup ((<>?)))
 
 data Event = EvCompletionUpdate Update
+
+instance SemiSemigroup Event where
+  EvCompletionUpdate (UpdateMessage a) <>? EvCompletionUpdate (UpdateMessage b) =
+    Just $ EvCompletionUpdate (UpdateMessage $ a <> b)
+  _ <>? _ = Nothing
 
 data Name
   = NPromptField
