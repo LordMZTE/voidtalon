@@ -3,12 +3,23 @@ on: [push]
 jobs:
   compile:
     runs-on: docker
+    strategy:
+      matrix:
+        ghc: ["9.10.3", "9.14.1"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache GHC
+        uses: actions/cache@v6
+        with:
+          path: ~/.ghcup
+          key: ghc-${{ runner.os }}-${{ matrix.ghc }}
+
       - name: Setup Haskell
         uses: actions/setup-haskell@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
 
       - name: Build
         run: |
