@@ -1,9 +1,24 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module VoidTalon.Util (untab, editInEditor, remove, ToJSONEncoding (..)) where
+module VoidTalon.Util
+  ( untab,
+    editInEditor,
+    remove,
+    ToJSONEncoding (..),
+    SemiSemigroup (..),
+    BufferedBChan (..),
+    newBufferedBChan,
+    pushBufferedBChan,
+    writeBufferedBChan,
+    flushBufferedBChan,
+    blockWriteBufferedBChan,
+  )
+where
 
+import Brick.BChan (BChan, newBChan, writeBChan, writeBChanNonBlocking)
+import Control.Concurrent (MVar, modifyMVar_, newMVar)
 import Control.Exception (finally)
 import Control.Monad (replicateM)
 import qualified Data.Aeson as J
@@ -55,3 +70,47 @@ class ToJSONEncoding a where
 -- with the language server.
 instance {-# OVERLAPPABLE #-} (J.ToJSON a) => ToJSONEncoding a where
   toEncoding = J.toEncoding
+
+-- | Like a Semigroup, but concatenation may not be possible in all cases
+class SemiSemigroup m where
+  -- | Must uphold the following laws:
+  -- - (a <>? b) >>= (<>? c) == (a <>?) =<< (b <>? c) (associativity)
+  (<>?) :: m -> m -> Maybe m
+
+-- | A wrapper around a BChan that can chunk events.  This is needed because Brick redraws the TUI
+-- after every event.  This makes no sense and needlessly slows down our application.  This is
+-- essentially used to implement the behavior that all pending events are consumed before we redraw
+-- the TUI again.
+data BufferedBChan e = BufferedBChan {ch :: BChan [e], buf :: MVar [e]}
+
+newBufferedBChan :: IO (BufferedBChan e)
+newBufferedBChan = do
+  chan <- newBChan 1
+  buf <- newMVar []
+  pure $ BufferedBChan chan buf
+
+-- | Pushes a message to the BChan's buffer.
+pushBufferedBChan :: (SemiSemigroup e) => e -> [e] -> [e]
+pushBufferedBChan e [] = [e]
+pushBufferedBChan e (x : xs) = case x <>? e of
+  Just e' -> e' : xs
+  Nothing -> e : x : xs
+
+-- | Attempt to send a message to the buffered channel, semisemigroupily buffering it if the channel
+-- is full.
+writeBufferedBChan :: (SemiSemigroup e) => e -> BufferedBChan e -> IO ()
+writeBufferedBChan ev (BufferedBChan ch mbuf) = modifyMVar_ mbuf sendWithBuffer
+  where
+    sendWithBuffer buf = do
+      let buf' = pushBufferedBChan ev buf
+      success <- writeBChanNonBlocking ch buf'
+      pure $ if success then [] else buf'
+
+-- | Flushes a BufferedBChan, blocking util everything has been written.
+flushBufferedBChan :: BufferedBChan e -> IO ()
+flushBufferedBChan (BufferedBChan ch mbuf) = modifyMVar_ mbuf $ (>> pure []) . writeBChan ch
+
+-- | Like calling writeBufferedBChan and then flushing, but more efficient.
+blockWriteBufferedBChan :: (SemiSemigroup e) => e -> BufferedBChan e -> IO ()
+blockWriteBufferedBChan ev (BufferedBChan ch mbuf) =
+  modifyMVar_ mbuf $ (>> pure []) . writeBChan ch . pushBufferedBChan ev

@@ -11,7 +11,6 @@ module VoidTalon.TUI
 where
 
 import Brick
-import Brick.BChan
 import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Center (centerLayer)
@@ -41,12 +40,12 @@ import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
-import VoidTalon.Util (remove)
+import VoidTalon.Util (BufferedBChan, remove)
 import qualified VoidTalon.Util as Util
 
 data State = State
   { config :: Config,
-    evchan :: BChan Event,
+    evchan :: BufferedBChan Event,
     focus :: FocusRing Name,
     promptEditor :: Editor T.Text Name,
     httpMan :: HTTP.Manager,
@@ -75,7 +74,13 @@ makeLensesFor
   ]
   ''State
 
-mkInitialState :: Config -> BChan Event -> HTTP.Manager -> ModelInfo -> [(T.Text, Tools.Tool)] -> IO State
+mkInitialState ::
+  Config ->
+  BufferedBChan Event ->
+  HTTP.Manager ->
+  ModelInfo ->
+  [(T.Text, Tools.Tool)] ->
+  IO State
 mkInitialState config evchan httpMan model tools =
   pure $
     State
@@ -92,7 +97,7 @@ mkInitialState config evchan httpMan model tools =
         tools = TM.newManager tools
       }
 
-type App' = App State Event Name
+type App' = App State [Event] Name
 
 app :: App'
 app =
@@ -181,7 +186,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         Just NToolManager -> TM.helpText
         _ -> ""
 
-handleEvent :: BrickEvent Name Event -> EventM Name State ()
+handleEvent :: BrickEvent Name [Event] -> EventM Name State ()
 -- Exit with <C-q>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
 -- Scroll with <C-e> and <C-y>
@@ -204,51 +209,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
     RunStateRunning thread -> do
       liftIO $ killThread thread
       stateRunStateL .= RunStateStopped "cancelled"
--- TODO: <> on ByteString is slow (O(n)), optimize
-handleEvent (AppEvent (EvCompletionUpdate (UpdateMessage added))) = do
-  -- append text to output
-  stateTimelineL %= \case
-    (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
-    tl -> (Timeline.OutputEntry added) : tl
-  -- stick to bottom
-  maybeVP <- lookupViewport NTimelineVP
-  case maybeVP of
-    Just vp ->
-      let top = vp ^. vpTop
-          (_, vpHeight) = vp ^. vpSize
-          (_, contentHeight) = vp ^. vpContentSize
-          visCols = contentHeight - top
-          isAtBottom = visCols <= vpHeight
-       in when isAtBottom $ vScrollToEnd outputVPScroll
-    Nothing -> pure ()
-handleEvent (AppEvent (EvCompletionUpdate (UpdateStop reason))) = do
-  stateRunStateL .= RunStateStopped reason
-  st <- get
-  case st.timeline of
-    ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
-      let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
-      -- Append broken calls to timeline right away
-      stateTimelineL
-        %= ( ( uncurry Timeline.ToolResultEntry
-                 . (("Error: " <>) . T.pack <$>)
-                 <$> brokenCalls
-             )
-               ++
-           )
-      -- Schedule valid calls for review
-      statePendingToolsL .= calls
-    _ -> pure ()
-  where
-    prepareInvocation ::
-      State ->
-      Tools.Call ->
-      Either (Tools.CallID, String) (Tools.CallID, T.Text, Tools.Invocation)
-    prepareInvocation st Tools.Call {id = id', name, parameters} =
-      case TM.findTool st.tools name of
-        Just (Tools.Tool {invoke}) -> case invoke parameters of
-          Left err -> Left (id', err)
-          Right res -> Right (id', name, res)
-        Nothing -> Left (id', "No such tool exists")
+handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
   case effectiveFocus st of
@@ -359,12 +320,60 @@ startCompletions = do
   thread <-
     liftIO $
       Completions.perform
-        ( writeBChan (st.evchan)
+        ( flip Util.writeBufferedBChan (st.evchan)
             . EvCompletionUpdate
         )
+        (Util.flushBufferedBChan st.evchan)
         (st.config).connection.base_url.inner
         (st.httpMan)
         ctx
 
   -- set runStatus to running
   stateRunStateL .= RunStateRunning thread
+
+handleAppEvent :: Event -> EventM Name State ()
+-- TODO: <> on ByteString is slow (O(n)), optimize
+handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = do
+  -- append text to output
+  stateTimelineL %= \case
+    (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
+    tl -> (Timeline.OutputEntry added) : tl
+  -- stick to bottom
+  maybeVP <- lookupViewport NTimelineVP
+  case maybeVP of
+    Just vp ->
+      let top = vp ^. vpTop
+          (_, vpHeight) = vp ^. vpSize
+          (_, contentHeight) = vp ^. vpContentSize
+          visCols = contentHeight - top
+          isAtBottom = visCols <= vpHeight
+       in when isAtBottom $ vScrollToEnd outputVPScroll
+    Nothing -> pure ()
+handleAppEvent (EvCompletionUpdate (UpdateStop reason)) = do
+  stateRunStateL .= RunStateStopped reason
+  st <- get
+  case st.timeline of
+    ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
+      let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
+      -- Append broken calls to timeline right away
+      stateTimelineL
+        %= ( ( uncurry Timeline.ToolResultEntry
+                 . (("Error: " <>) . T.pack <$>)
+                 <$> brokenCalls
+             )
+               ++
+           )
+      -- Schedule valid calls for review
+      statePendingToolsL .= calls
+    _ -> pure ()
+  where
+    prepareInvocation ::
+      State ->
+      Tools.Call ->
+      Either (Tools.CallID, String) (Tools.CallID, T.Text, Tools.Invocation)
+    prepareInvocation st Tools.Call {id = id', name, parameters} =
+      case TM.findTool st.tools name of
+        Just (Tools.Tool {invoke}) -> case invoke parameters of
+          Left err -> Left (id', err)
+          Right res -> Right (id', name, res)
+        Nothing -> Left (id', "No such tool exists")
