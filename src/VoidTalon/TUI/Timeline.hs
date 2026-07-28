@@ -1,6 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module VoidTalon.TUI.Timeline (entryWidget, draw, editEntry) where
+module VoidTalon.TUI.Timeline
+  ( State (..),
+    initialState,
+    stateFocusL,
+    stateEntriesL,
+    entryWidget,
+    draw,
+    editEntry,
+  )
+where
 
 import Brick
 import Brick.Widgets.Border
@@ -10,13 +20,30 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map.Lazy as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import Lens.Micro.TH
 import Skylighting as SL
 import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
-import VoidTalon.TUI.Types (Name (..), selectedA, toolTitleA, toolResultBorderA)
+import VoidTalon.TUI.Types (Name (..), selectedA, toolResultBorderA, toolTitleA)
 import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
 import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (editInEditor)
+
+data State = State
+  { -- | Index of the element in the timeline that's focused.  Starts from the bottom.
+    focus :: Int,
+    -- | These are stored in reverse since we update the latest message.
+    entries :: [TL.Entry]
+  }
+
+makeLensesFor
+  [ ("focus", "stateFocusL"),
+    ("entries", "stateEntriesL")
+  ]
+  ''State
+
+initialState :: State
+initialState = State {focus = 0, entries = []}
 
 messagePadding :: Padding
 messagePadding = Pad 3
@@ -53,23 +80,24 @@ entryWidget sel (TL.ToolResultEntry {id = _, content}) =
   where
     inner = overrideAttr borderAttr toolResultBorderA $ messageWidget $ txtWrap content
 
-draw :: Maybe Int -> [TL.Entry] -> Widget TT.Name
-draw focus =
+draw ::
+  -- | True iff the timeline is currently focused
+  Bool ->
+  State ->
+  Widget TT.Name
+draw focused State {focus, entries} =
   withVScrollBars OnRight
     . viewport NTimelineVP Vertical
     . vBox
     . fst
-    . foldl
+    $ foldl
       ( \(l, n) e ->
-          ( (reportExtent (NTimelineEntry n) $ entryWidget (isFocused n) e) : l,
+          ( (reportExtent (NTimelineEntry n) $ entryWidget (focused && n == focus) e) : l,
             n + 1
           )
       )
       ([], 0)
-  where
-    isFocused n = case focus of
-      Nothing -> False
-      Just m -> n == m
+      entries
 
 -- | Invoke the user's editor on the given entry
 editEntry :: TL.Entry -> IO TL.Entry
@@ -90,4 +118,4 @@ editEntry (TL.OutputEntry (TL.LLMMessage reasoning content toolCalls)) = do
 editEntry (TL.ToolResultEntry {id = id', content}) = do
   edited <- editInEditor "md" $ LT.fromStrict content
   -- Can't use update syntax here because that gets us some weird compiler warning
-  pure $ TL.ToolResultEntry { id = id', TL.content = LT.toStrict edited }
+  pure $ TL.ToolResultEntry {id = id', TL.content = LT.toStrict edited}

@@ -49,14 +49,11 @@ data State = State
     focus :: FocusRing Name,
     promptEditor :: Editor T.Text Name,
     httpMan :: HTTP.Manager,
-    -- | These are stored in reverse since we update the latest message.
-    timeline :: [Timeline.Entry],
+    timeline :: Timeline.State,
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
     model :: ModelInfo,
     runState :: RunState,
-    -- | Index of the element in the timeline that's focused.  Starts from the bottom.
-    timelineFocus :: Int,
     -- | Tools that the model requested but the user hasn't reviewed yet.
     -- (id, name, invocation)
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
@@ -68,7 +65,6 @@ makeLensesFor
     ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
     ("runState", "stateRunStateL"),
-    ("timelineFocus", "stateTimelineFocusL"),
     ("pendingTools", "statePendingToolsL"),
     ("tools", "stateToolsL")
   ]
@@ -90,9 +86,8 @@ mkInitialState config evchan httpMan model tools =
         model,
         focus = focusRing [NPromptField, NTimelineVP, NToolManager],
         promptEditor = editorText NPromptField Nothing "",
-        timeline = [],
+        timeline = Timeline.initialState,
         runState = RunStateStopped "stop",
-        timelineFocus = 0,
         pendingTools = [],
         tools = TM.newManager tools
       }
@@ -161,10 +156,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
           _ -> []
     output =
       Timeline.draw
-        ( if (effectiveFocus st == Just NTimelineVP)
-            then Just st.timelineFocus
-            else Nothing
-        )
+        (effectiveFocus st == Just NTimelineVP)
         st.timeline
     prompt =
       withFocusRing
@@ -197,7 +189,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
   stateFocusL %= focusNext
   cur <- focusGetCurrent <$> gets (.focus)
   -- If we've just focused the timeline, reset focused element to last entry
-  when (cur == Just NTimelineVP) $ stateTimelineFocusL .= 0
+  when (cur == Just NTimelineVP) $ stateTimelineL . Timeline.stateFocusL .= 0
   makeVisible $ NTimelineEntry 0
 -- Stop ongoing completions with <C-c>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
@@ -226,7 +218,7 @@ handleEvent ev = do
           statePromptEditorL %= applyEdit clearZipper
 
           -- append prompt to timeline
-          stateTimelineL %= (Timeline.PromptEntry prompt :)
+          stateTimelineL . Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
 
           startCompletions
 
@@ -240,29 +232,29 @@ handleEvent ev = do
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
     Just NTimelineVP -> case ev of
       (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
-        let new = case st.timelineFocus + 1 of
-              n | n >= length st.timeline -> 0
+        let new = case st.timeline.focus + 1 of
+              n | n >= length st.timeline.entries -> 0
               n -> n
-        stateTimelineFocusL .= new
+        stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
       (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
-        let new = case st.timelineFocus - 1 of
-              n | n < 0 -> subtract 1 $ length st.timeline
+        let new = case st.timeline.focus - 1 of
+              n | n < 0 -> subtract 1 $ length st.timeline.entries
               n -> n
-        stateTimelineFocusL .= new
+        stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
       (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
-        let idx = max 0 (st.timelineFocus)
-        stateTimelineL %= remove idx
+        let idx = max 0 (st.timeline.focus)
+        stateTimelineL . Timeline.stateEntriesL %= remove idx
       (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
         suspendAndResume $
           mapMOf
-            (stateTimelineL . ix st.timelineFocus)
+            (stateTimelineL . Timeline.stateEntriesL . ix st.timeline.focus)
             (liftIO . Timeline.editEntry)
             st
       (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
         -- tail of the timeline with the selected entry being the last one
-        let tl' = drop st.timelineFocus $ st.timeline
+        let tl' = drop st.timeline.focus $ st.timeline.entries
         let tl =
               -- Remove timeline entries from our tail until a prompt or tool result remains
               dropWhile
@@ -274,7 +266,7 @@ handleEvent ev = do
 
         -- If the rest the timeline is completely empty, we have nothing to work with.
         unless (null tl) $ do
-          stateTimelineL .= tl
+          stateTimelineL . Timeline.stateEntriesL .= tl
           startCompletions
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent ev
@@ -286,7 +278,7 @@ handleEvent ev = do
             EventM n State ()
           finishTool id' content rest = do
             let entry = Timeline.ToolResultEntry {id = id', content = content}
-            stateTimelineL %= (entry :)
+            stateTimelineL . Timeline.stateEntriesL %= (entry :)
             statePendingToolsL .= rest
             when (null rest && isStopped st.runState) startCompletions
        in case (st.pendingTools, ev) of
@@ -313,7 +305,7 @@ startCompletions = do
   let ctx =
         Completions.Context
           { model = st.model.id,
-            timeline = reverse st.timeline,
+            timeline = reverse st.timeline.entries,
             tools = TM.activeTools st.tools
           }
   -- start completions request
@@ -335,7 +327,7 @@ handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
 handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = do
   -- append text to output
-  stateTimelineL %= \case
+  stateTimelineL . Timeline.stateEntriesL %= \case
     (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
     tl -> (Timeline.OutputEntry added) : tl
   -- stick to bottom
@@ -352,11 +344,11 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = do
 handleAppEvent (EvCompletionUpdate (UpdateStop reason)) = do
   stateRunStateL .= RunStateStopped reason
   st <- get
-  case st.timeline of
+  case st.timeline.entries of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
       let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
       -- Append broken calls to timeline right away
-      stateTimelineL
+      stateTimelineL . Timeline.stateEntriesL
         %= ( ( uncurry Timeline.ToolResultEntry
                  . (("Error: " <>) . T.pack <$>)
                  <$> brokenCalls
