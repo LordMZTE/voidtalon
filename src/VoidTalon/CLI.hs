@@ -1,6 +1,7 @@
 module VoidTalon.CLI (Arguments (..), parser, readArguments) where
 
 import Options.Applicative
+import PackageInfo_voidtalon (synopsis)
 
 data Arguments = Arguments
   { config :: Maybe String
@@ -19,7 +20,4 @@ parser =
       )
 
 readArguments :: IO Arguments
-readArguments =
-  execParser $ info (helper <*> parser) (fullDesc <> progDesc desc)
-  where
-    desc = "Lean TUI for OpenAI-compatible LLMs with MCP and tools."
+readArguments = execParser $ info (helper <*> parser) (fullDesc <> progDesc synopsis)
