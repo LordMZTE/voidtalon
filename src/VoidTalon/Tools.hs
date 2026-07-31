@@ -2,8 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module VoidTalon.Tools
-  ( Schema (..),
-    NamedDescription (..),
+  ( NamedDescription (..),
     Description (..),
     Plan,
     Invocation,
@@ -16,40 +15,10 @@ where
 
 import Control.Applicative ((<|>))
 import Data.Aeson hiding (toEncoding)
-import Data.Aeson.Encoding (list, pair)
-import Data.Aeson.Key (fromText)
+import Data.Aeson.Encoding (pair)
 import Data.Char (isSpace)
 import qualified Data.Text as T
-import VoidTalon.Util (ToJSONEncoding (..))
-
-data Schema
-  = SchemaObject
-      { properties :: [(T.Text, Schema)],
-        required :: [T.Text]
-      }
-  | SchemaBool {description :: T.Text}
-  | SchemaInteger {description :: T.Text}
-  | SchemaString {description :: T.Text}
-
-encodeSimpleSchema :: T.Text -> T.Text -> Encoding
-encodeSimpleSchema typ desc = pairs ("type" .= typ <> "description" .= desc)
-
-instance ToJSONEncoding Schema where
-  toEncoding SchemaObject {properties, required} =
-    pairs $
-      mconcat
-        [ "type" .= ("object" :: T.Text),
-          pair "required" (list toEncoding required),
-          pair
-            "properties"
-            ( pairs $
-                mconcat $
-                  (\(k, v) -> pair (fromText k) (toEncoding v)) <$> properties
-            )
-        ]
-  toEncoding SchemaBool {description} = encodeSimpleSchema "boolean" description
-  toEncoding SchemaInteger {description} = encodeSimpleSchema "integer" description
-  toEncoding SchemaString {description} = encodeSimpleSchema "string" description
+import VoidTalon.JSON (Schema, ToJSONEncoding (..))
 
 -- | A description that tells the LLM what this tool does and how to use it.
 data Description = Description

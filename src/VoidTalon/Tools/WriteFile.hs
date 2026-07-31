@@ -6,6 +6,7 @@ import Data.Aeson
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import VoidTalon.Tools
+import VoidTalon.JSON (Schema(..))
 
 description :: Description
 description =

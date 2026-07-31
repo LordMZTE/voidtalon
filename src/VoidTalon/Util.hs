@@ -1,12 +1,9 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module VoidTalon.Util
   ( untab,
     editInEditor,
     remove,
-    ToJSONEncoding (..),
     SemiSemigroup (..),
     BufferedBChan (..),
     newBufferedBChan,
@@ -21,7 +18,6 @@ import Brick.BChan (BChan, newBChan, writeBChan, writeBChanNonBlocking)
 import Control.Concurrent (MVar, modifyMVar_, newMVar)
 import Control.Exception (finally)
 import Control.Monad (replicateM)
-import qualified Data.Aeson as J
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
@@ -60,16 +56,6 @@ remove :: (Num n, Eq n) => n -> [a] -> [a]
 remove _ xs@[] = xs
 remove 0 (_ : xs) = xs
 remove n (x : xs) = x : (remove (n - 1) xs)
-
--- We don't specify ToJSON instances because that would require us to also implement `toJSON`,
--- causing code duplication and no advantage.
-class ToJSONEncoding a where
-  toEncoding :: a -> J.Encoding
-
--- This {-# OVERLAPPABLE #-} pragma isn't actually needed, it just prevents a false-positive error
--- with the language server.
-instance {-# OVERLAPPABLE #-} (J.ToJSON a) => ToJSONEncoding a where
-  toEncoding = J.toEncoding
 
 -- | Like a Semigroup, but concatenation may not be possible in all cases
 class SemiSemigroup m where

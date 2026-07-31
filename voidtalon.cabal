@@ -16,10 +16,12 @@ executable vt
       PackageInfo_voidtalon
       VoidTalon.CLI
       VoidTalon.Config
+      VoidTalon.JSON
       VoidTalon.Markdown
       VoidTalon.Net
       VoidTalon.Net.Completions
       VoidTalon.Net.MCP
+      VoidTalon.Net.MCP.Types
       VoidTalon.Net.Models
       VoidTalon.Tools
       VoidTalon.Tools.ReadFile

@@ -21,6 +21,7 @@ import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
+import VoidTalon.JSON (Schema (..))
 import VoidTalon.TUI.Types (toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
 import qualified VoidTalon.Tools as Tools
 
@@ -86,16 +87,16 @@ draw Manager {states, selected} = hBox [list, vBorder, schemaView]
     typeWidget :: T.Text -> Widget n
     typeWidget = withAttr toolManagerSchemaTypeA . txt
 
-    schemaWidget :: Tools.Schema -> Widget n
-    schemaWidget Tools.SchemaObject {properties, required} =
+    schemaWidget :: Schema -> Widget n
+    schemaWidget SchemaObject {properties, required} =
       let top = (typeWidget "[OBJ]") <+> txtWrap (" req: " <> T.show required)
           propertyWidget (name, schema) = txt (name <> ": ") <+> schemaWidget schema
        in top <=> (padLeft (Pad 2) $ vBox $ propertyWidget <$> properties)
-    schemaWidget Tools.SchemaBool {description} =
+    schemaWidget SchemaBool {description} =
       typeWidget "[BOOL]" <+> padLeft (Pad 1) (txtWrap description)
-    schemaWidget Tools.SchemaInteger {description} =
+    schemaWidget SchemaInteger {description} =
       typeWidget "[INT]" <+> padLeft (Pad 1) (txtWrap description)
-    schemaWidget Tools.SchemaString {description} =
+    schemaWidget SchemaString {description} =
       typeWidget "[STRING]" <+> padLeft (Pad 1) (txtWrap description)
 
 drawState :: Bool -> ToolState -> Widget n

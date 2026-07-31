@@ -8,6 +8,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO.Utf8 as TIO8
 import System.Exit (ExitCode (..))
 import System.Process (StdStream (CreatePipe), createProcess, shell, std_out, waitForProcess)
+import VoidTalon.JSON (Schema (..))
 import VoidTalon.Tools
 
 description :: Description

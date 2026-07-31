@@ -7,6 +7,7 @@ import Data.Aeson
 import Data.Char (isSpace)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import VoidTalon.JSON (Schema (..))
 import VoidTalon.Tools
 
 description :: Description

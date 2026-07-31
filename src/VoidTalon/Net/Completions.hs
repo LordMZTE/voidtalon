@@ -36,11 +36,12 @@ import Network.HTTP.Client
 import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
 import System.FilePath ((</>))
+import VoidTalon.JSON (ToJSONEncoding (..), (.:<>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
-import VoidTalon.Util (ToJSONEncoding (..), untab)
+import VoidTalon.Util (untab)
 
 perform ::
   -- | Consumer that will be called with incoming updates
@@ -173,10 +174,10 @@ instance FromJSON Choice where
                 . fmap
                   ( \d ->
                       LLMMessage
-                        <$> (untab <$> d .:? "reasoning_content" .!= T.empty)
-                        <*> (untab <$> d .:? "content" .!= T.empty)
+                        <$> (untab <$> d .:<> "reasoning_content")
+                        <*> (untab <$> d .:<> "content")
                         <*> ( mconcat
-                                <$> (d .:? "tool_calls" .!= [] >>= (sequence . fmap parseTools))
+                                <$> (d .:<> "tool_calls" >>= (sequence . fmap parseTools))
                             )
                   )
           )
@@ -191,8 +192,8 @@ instance FromJSON Choice where
                   -- We treat the name like the arguments - starts empty and is appended onto.  God
                   -- knows if this is how the API is meant to be understood, but it works with a
                   -- well-behaved server anyways.
-                  <*> (untab <$> fun .:? "name" .!= T.empty)
+                  <*> (untab <$> fun .:<> "name")
                   -- Untabbing this might become an issue.  We'll deal with it when it does.
-                  <*> (untab <$> fun .:? "arguments" .!= T.empty)
+                  <*> (untab <$> fun .:<> "arguments")
               )
   parseJSON _ = mempty
