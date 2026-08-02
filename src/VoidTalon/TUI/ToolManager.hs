@@ -16,12 +16,14 @@ import Brick
 import Brick.Widgets.Border (vBorder)
 import Data.Function (applyWhen)
 import Data.List (find, (!?))
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
-import VoidTalon.TUI.Types (toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
+import VoidTalon.JSON (Schema (..), SchemaType)
+import VoidTalon.TUI.Types (Name (NToolManagerEntry, NToolManagerVP), toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
 import qualified VoidTalon.Tools as Tools
 
 -- | Current state of a registered tool.
@@ -59,44 +61,62 @@ findTool :: Manager -> T.Text -> Maybe Tools.Tool
 findTool Manager {states} name =
   (\(_, _, t) -> t) <$> find (\(enabled, n, _) -> enabled && n == name) states
 
-handleEvent :: BrickEvent n e -> EventM n Manager ()
+handleEvent :: BrickEvent Name e -> EventM Name Manager ()
 handleEvent (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   m <- get
-  managerSelectedL .= case m.selected + 1 of
-    n | n >= length m.states -> 0
-    n -> n
+  let sel = case m.selected + 1 of
+        n | n >= length m.states -> 0
+        n -> n
+  managerSelectedL .= sel
+  makeVisible $ NToolManagerEntry sel
 handleEvent (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
-  managerSelectedL .= case m.selected - 1 of
-    n | n < 0 -> length m.states - 1
-    n -> n
+  let sel = case m.selected - 1 of
+        n | n < 0 -> length m.states - 1
+        n -> n
+  managerSelectedL .= sel
+  makeVisible $ NToolManagerEntry sel
 handleEvent (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
   sel <- gets (.selected)
   managerStatesL . ix sel . _1 %= not
 handleEvent _ = pure ()
 
-draw :: Manager -> Widget n
+draw :: Manager -> Widget Name
 draw Manager {states, selected} = hBox [list, vBorder, schemaView]
   where
-    list = vBox $ (\(s, i) -> drawState (i == selected) s) <$> zip states [0 ..]
+    list =
+      withVScrollBars OnLeft
+        . viewport NToolManagerVP Vertical
+        . vBox
+        $ ( \(s, i) ->
+              reportExtent (NToolManagerEntry i) $
+                drawState (i == selected) s
+          )
+          <$> zip states [0 ..]
     schemaView = case states !? selected of
       Just (_, _, Tools.Tool {description}) -> schemaWidget description.schema
       Nothing -> emptyWidget
 
-    typeWidget :: T.Text -> Widget n
-    typeWidget = withAttr toolManagerSchemaTypeA . txt
+    typeWidget :: [SchemaType] -> Widget n
+    typeWidget =
+      withAttr toolManagerSchemaTypeA
+        . txt
+        . (\t -> mconcat ["[", t, "]"])
+        . T.intercalate "/"
+        . (T.show <$>)
 
-    schemaWidget :: Tools.Schema -> Widget n
-    schemaWidget Tools.SchemaObject {properties, required} =
-      let top = (typeWidget "[OBJ]") <+> txtWrap (" req: " <> T.show required)
-          propertyWidget (name, schema) = txt (name <> ": ") <+> schemaWidget schema
-       in top <=> (padLeft (Pad 2) $ vBox $ propertyWidget <$> properties)
-    schemaWidget Tools.SchemaBool {description} =
-      typeWidget "[BOOL]" <+> padLeft (Pad 1) (txtWrap description)
-    schemaWidget Tools.SchemaInteger {description} =
-      typeWidget "[INT]" <+> padLeft (Pad 1) (txtWrap description)
-    schemaWidget Tools.SchemaString {description} =
-      typeWidget "[STRING]" <+> padLeft (Pad 1) (txtWrap description)
+    schemaWidget :: Schema -> Widget n
+    schemaWidget Schema {types, properties, required, description} =
+      if null properties then top else top <=> (padLeft (Pad 2) $ vBox $ propertyWidget <$> properties)
+      where
+        top =
+          typeWidget types
+            <+> padLeft
+              (Pad 1)
+              (txtWrap $ fromMaybe "<no description>" description)
+        propertyWidget (name, schema) =
+          txt (name <> if elem name required then ": " else "?: ")
+            <+> schemaWidget schema
 
 drawState :: Bool -> ToolState -> Widget n
 drawState selected (enabled, name, Tools.Tool {description = Tools.Description {description}}) =

@@ -7,6 +7,7 @@ import Data.Aeson
 import Data.Char (isSpace)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import VoidTalon.JSON (Schema (..), SchemaType (SchemaTypeObject, SchemaTypeString), emptySchema)
 import VoidTalon.Tools
 
 description :: Description
@@ -14,8 +15,16 @@ description =
   Description
     { description = "Read a file given a path",
       schema =
-        SchemaObject
-          { properties = [("path", SchemaString "Path of the file to read")],
+        emptySchema
+          { types = [SchemaTypeObject],
+            properties =
+              [ ( "path",
+                  emptySchema
+                    { types = [SchemaTypeString],
+                      description = Just "Path of the file to read"
+                    }
+                )
+              ],
             required = ["path"]
           }
     }
