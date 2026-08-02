@@ -17,12 +17,12 @@ import Data.Aeson hiding (toEncoding)
 import qualified Data.Aeson as J
 import Data.Aeson.Encoding
 import Data.Aeson.Key (fromText, toText)
-import Data.Aeson.KeyMap (toList)
+import qualified Data.Aeson.KeyMap as AKM
 import Data.Aeson.Types (Parser, emptyObject)
 import Data.Bifunctor (Bifunctor (bimap))
+import Data.Foldable (toList)
 import Data.Maybe (maybeToList)
 import qualified Data.Text as T
-import Control.Applicative ((<|>))
 
 -- We don't specify ToJSON instances because that would require us to also implement `toJSON`,
 -- causing code duplication and no advantage.
@@ -40,23 +40,29 @@ v .:<> k = v .:? k .!= mempty
 
 data SchemaType
   = SchemaTypeObject -- "object"
+  | SchemaTypeArray -- "array"
   | SchemaTypeBool -- "boolean"
   | SchemaTypeInt -- "integer"
+  | SchemaTypeFloat -- "number"
   | SchemaTypeString -- "string"
   | SchemaTypeNull -- "null"
 
 instance Show SchemaType where
   show SchemaTypeObject = "object"
+  show SchemaTypeArray = "array"
   show SchemaTypeBool = "boolean"
   show SchemaTypeInt = "integer"
+  show SchemaTypeFloat = "number"
   show SchemaTypeString = "string"
   show SchemaTypeNull = "null"
 
 instance FromJSON SchemaType where
   parseJSON = withText "SchemaType" $ \case
     "object" -> pure SchemaTypeObject
+    "array" -> pure SchemaTypeArray
     "boolean" -> pure SchemaTypeBool
     "integer" -> pure SchemaTypeInt
+    "number" -> pure SchemaTypeFloat
     "string" -> pure SchemaTypeString
     "null" -> pure SchemaTypeNull
     t -> fail ("Unexpected SchemaType: " ++ T.unpack t)
@@ -102,16 +108,20 @@ instance ToJSONEncoding Schema where
         l -> list toEncoding l
 
 instance FromJSON Schema where
-  parseJSON (Object v) = Schema
-    <$> ((pure <$> v .: "type") <|> v .: "type")
-    <*> (v .:? "properties" .!= emptyObject >>= parseProperties)
-    <*> (v .:<> "required")
-    <*> (v .:? "description")
+  parseJSON (Object v) =
+    Schema
+      <$> ( (v .: "type" :: Parser Value) >>= \v' ->
+              case v' of
+                Array a -> mapM parseJSON $ toList a
+                val@(String _) -> pure <$> parseJSON val
+                _ -> fail "invalid type for schema type"
+          )
+      <*> (v .:? "properties" .!= emptyObject >>= parseProperties)
+      <*> (v .:<> "required")
+      <*> (v .:? "description")
     where
       parseProperties :: Value -> Parser [(T.Text, Schema)]
       parseProperties (Object p) =
-        sequenceA $ (\(k, v') -> (toText k,) <$> parseJSON v') <$> toList p
+        sequenceA $ (\(k, v') -> (toText k,) <$> parseJSON v') <$> AKM.toList p
       parseProperties _ = mempty
-    
   parseJSON _ = mempty
-

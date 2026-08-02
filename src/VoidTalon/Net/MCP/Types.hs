@@ -22,7 +22,7 @@ import Data.Aeson.Encoding
 import Data.Aeson.KeyMap (member)
 import Data.Aeson.Types (Parser)
 import qualified Data.Text as T
-import VoidTalon.JSON (Schema, ToJSONEncoding (toEncoding))
+import VoidTalon.JSON (Schema, ToJSONEncoding (toEncoding), (.:<>))
 
 methodInitialize :: T.Text
 methodInitialize = "initialize"
@@ -71,7 +71,7 @@ instance FromJSON InitializeReply where
   parseJSON (Object v) =
     InitializeReply
       <$> (v .: "capabilities")
-      <*> (v .: "instructions")
+      <*> (v .:<> "instructions")
   parseJSON _ = mempty
 
 data RPCFailure
