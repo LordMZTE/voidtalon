@@ -8,7 +8,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO.Utf8 as TIO8
 import System.Exit (ExitCode (..))
 import System.Process (StdStream (CreatePipe), createProcess, shell, std_out, waitForProcess)
-import VoidTalon.JSON (Schema (..))
+import VoidTalon.JSON (Schema (..), SchemaType (SchemaTypeObject, SchemaTypeString), emptySchema)
 import VoidTalon.Tools
 
 description :: Description
@@ -18,9 +18,15 @@ description =
         "Run a command in a POSIX-compliant shell\n"
           <> "Note that shell state (i.e. environment variables) is **NOT** preserved across tool calls.",
       schema =
-        SchemaObject
-          { properties =
-              [ ("command", SchemaString "The command to run")
+        emptySchema
+          { types = [SchemaTypeObject],
+            properties =
+              [ ( "command",
+                  emptySchema
+                    { types = [SchemaTypeString],
+                      description = Just "The command to run"
+                    }
+                )
               ],
             required = ["command"]
           }

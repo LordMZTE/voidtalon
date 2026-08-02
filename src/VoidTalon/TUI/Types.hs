@@ -38,6 +38,8 @@ data Name
   | NTimelineEntry Int
   | NToolDialog
   | NToolManager
+  | NToolManagerVP
+  | NToolManagerEntry Int
   deriving (Eq, Ord, Show)
 
 data RunState

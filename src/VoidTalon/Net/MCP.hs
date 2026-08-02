@@ -5,12 +5,15 @@ module VoidTalon.Net.MCP
   ( Transport (..),
     Connection (..),
     InitFailure (..),
+    closeConnection,
+    spawnStdio,
     performInitialization,
     module VoidTalon.Net.MCP.Types,
   )
 where
 
-import Control.Concurrent (MVar, modifyMVar)
+import Control.Concurrent (MVar, modifyMVar, newMVar)
+import Control.Exception (throwIO)
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Bifunctor (bimap)
@@ -18,7 +21,15 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import qualified Data.Text as T
 import PackageInfo_voidtalon (homepage, synopsis, version)
-import System.IO (Handle)
+import System.IO (Handle, hFlush)
+import System.Process
+  ( CreateProcess (std_in, std_out),
+    ProcessHandle,
+    StdStream (CreatePipe, Inherit),
+    createProcess,
+    std_err,
+    terminateProcess,
+  )
 import VoidTalon.JSON (ToJSONEncoding (toEncoding))
 import VoidTalon.Net.MCP.Types
 import qualified VoidTalon.Tools as Tools
@@ -45,9 +56,22 @@ initializationParams =
 
 -- | A connection to an MCP server
 -- TODO: HTTP transport
-data Transport = TransportStdio {stdin :: Handle, stdout :: Handle}
+data Transport = TransportStdio {stdin :: Handle, stdout :: Handle, processHandle :: ProcessHandle}
 
 data Connection = Connection {transport :: Transport, nextId :: MVar Int}
+
+closeConnection :: Connection -> IO ()
+closeConnection Connection {transport} = case transport of
+  TransportStdio {processHandle} -> terminateProcess processHandle
+
+-- | Spawn an MCP server with stdio transport.
+-- std_in, std_out, and std_err fields of given @CreateProcess@ are overwritten.
+spawnStdio :: CreateProcess -> IO Connection
+spawnStdio spec = do
+  let spec' = spec {std_in = CreatePipe, std_out = CreatePipe, std_err = Inherit}
+  (Just stdin, Just stdout, Nothing, processHandle) <- createProcess spec'
+  nextId <- newMVar 0
+  pure $ Connection {transport = TransportStdio {stdin, stdout, processHandle}, nextId}
 
 useId :: MVar Int -> (Int -> IO a) -> IO a
 useId mv f = modifyMVar mv $ sequence . liftA2 (,) (+ 1) f
@@ -65,18 +89,19 @@ jsonRPCCall Connection {transport, nextId} method params = do
     ( do
         let msg = JSONRPCMessage {id = Just i, method, params}
         LBS8.hPutStrLn transport.stdin . encodingToLazyByteString $ toEncoding msg
+        hFlush transport.stdin
     )
       >> pure i
   reply <- BS8.hGetLine transport.stdout
-  pure $ case decode $ LBS8.fromStrict reply of
-    Nothing -> Left RPCFailureDecode
-    Just (JSONRPCReply {id = id'}) | id' /= callID -> Left RPCFailureIDMismatch
-    Just (JSONRPCReply {result}) -> Right result
+  pure $ case eitherDecode $ LBS8.fromStrict reply of
+    Left e -> Left $ RPCFailureDecode e
+    Right (JSONRPCReply {id = id'}) | id' /= callID -> Left RPCFailureIDMismatch
+    Right (JSONRPCReply {result}) -> Right result
 
 -- | Perform initialization on an MCP connection
 performInitialization :: Connection -> IO (Either InitFailure [(T.Text, Tools.Tool)])
 performInitialization con = do
-  reply <- jsonRPCCall con "initialize" initializationParams
+  reply <- jsonRPCCall con methodInitialize initializationParams
   case reply of
     Left e -> pure . Left $ InitFailureRPC e
     Right
@@ -94,7 +119,7 @@ listTools con page = do
   let params = case page of
         Nothing -> emptyObject_
         Just p -> pairs $ "cursor" .= p
-  reply <- jsonRPCCall con "tools/list" params
+  reply <- jsonRPCCall con methodToolsList params
   case reply of
     Left e -> pure $ Left e
     Right ToolListReply {nextCursor, tools} -> case nextCursor of
@@ -105,7 +130,7 @@ listTools con page = do
       Nothing -> pure . Right $ tools
 
 makeToolForSpec :: Connection -> ToolSpec -> Tools.Tool
-makeToolForSpec con ToolSpec {inputSchema, description} =
+makeToolForSpec con ToolSpec {name, inputSchema, description} =
   Tools.Tool
     { description =
         Tools.Description
@@ -118,4 +143,14 @@ makeToolForSpec con ToolSpec {inputSchema, description} =
     invoke input = do
       val <- eitherDecodeStrictText input
       pure ([], perform (val :: Value))
-    perform val = undefined -- TODO
+    perform val = do
+      let params =
+            pairs $
+              mconcat
+                [ "name" .= name,
+                  "arguments" .= val
+                ]
+      reply <- jsonRPCCall con methodToolsCall params
+      case reply of
+        Left err -> throwIO err
+        Right (ToolCallReply reply') -> pure reply'
