@@ -13,6 +13,7 @@ module VoidTalon.TUI.Types
     toolManagerToolTitleA,
     toolManagerSelectedA,
     toolManagerSchemaTypeA,
+    toolManagerSchemaKeyA,
     bakedWidget,
     overlaySizeLimitPercent,
   )
@@ -88,6 +89,9 @@ toolManagerSelectedA = attrName "toolManagerSelected"
 -- | Attribute name used for the types shown in the tool manager's schema preview.
 toolManagerSchemaTypeA :: AttrName
 toolManagerSchemaTypeA = attrName "toolManagerSchemaType"
+
+toolManagerSchemaKeyA :: AttrName
+toolManagerSchemaKeyA = attrName "toolManagerSchemaKey"
 
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into

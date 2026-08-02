@@ -16,11 +16,9 @@ where
 import Data.Aeson hiding (toEncoding)
 import qualified Data.Aeson as J
 import Data.Aeson.Encoding
-import Data.Aeson.Key (fromText, toText)
-import qualified Data.Aeson.KeyMap as AKM
-import Data.Aeson.Types (Parser, emptyObject)
+import Data.Aeson.Key (fromText)
+import Data.Aeson.Types (Parser)
 import Data.Bifunctor (Bifunctor (bimap))
-import Data.Foldable (toList)
 import Data.Maybe (maybeToList)
 import qualified Data.Text as T
 
@@ -106,22 +104,3 @@ instance ToJSONEncoding Schema where
       encodedTypes = case types of
         [t] -> toEncoding t
         l -> list toEncoding l
-
-instance FromJSON Schema where
-  parseJSON (Object v) =
-    Schema
-      <$> ( (v .: "type" :: Parser Value) >>= \v' ->
-              case v' of
-                Array a -> mapM parseJSON $ toList a
-                val@(String _) -> pure <$> parseJSON val
-                _ -> fail "invalid type for schema type"
-          )
-      <*> (v .:? "properties" .!= emptyObject >>= parseProperties)
-      <*> (v .:<> "required")
-      <*> (v .:? "description")
-    where
-      parseProperties :: Value -> Parser [(T.Text, Schema)]
-      parseProperties (Object p) =
-        sequenceA $ (\(k, v') -> (toText k,) <$> parseJSON v') <$> AKM.toList p
-      parseProperties _ = mempty
-  parseJSON _ = mempty

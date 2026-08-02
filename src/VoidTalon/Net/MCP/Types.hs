@@ -22,7 +22,7 @@ import Data.Aeson.Encoding
 import Data.Aeson.KeyMap (member)
 import Data.Aeson.Types (Parser)
 import qualified Data.Text as T
-import VoidTalon.JSON (Schema, ToJSONEncoding (toEncoding), (.:<>))
+import VoidTalon.JSON (ToJSONEncoding (toEncoding), (.:<>))
 
 methodInitialize :: T.Text
 methodInitialize = "initialize"
@@ -93,7 +93,17 @@ data InitFailure
 instance Exception InitFailure
 
 -- | Specification for a tool returned from the MCP server
-data ToolSpec = ToolSpec {name :: T.Text, description :: T.Text, inputSchema :: Schema}
+data ToolSpec = ToolSpec
+  { name :: T.Text,
+    description :: T.Text,
+    -- | You may be asking yourself why this isn't a `Schema`, but an untyped Value. Well, the
+    -- reason is that whoever invented json-schema was a complete nut job!  The whole format is a
+    -- dumpster fire, and a spec-complaint parser would probably make up the majority of this code
+    -- base if I were willing to sacrifice enough of my sanity to implement one.  Clearly, JSON
+    -- schemas are more suitable as human-readable (or AI-readable) data types than machine-readable
+    -- ones.
+    inputSchema :: Value
+  }
 
 instance FromJSON ToolSpec where
   parseJSON (Object v) =

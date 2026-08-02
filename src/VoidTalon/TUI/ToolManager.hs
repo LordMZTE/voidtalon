@@ -14,6 +14,10 @@ where
 
 import Brick
 import Brick.Widgets.Border (vBorder)
+import qualified Data.Aeson as J
+import qualified Data.Aeson.Key as AK
+import qualified Data.Aeson.KeyMap as AK
+import Data.Foldable (toList)
 import Data.Function (applyWhen)
 import Data.List (find, (!?))
 import Data.Maybe (fromMaybe)
@@ -23,7 +27,7 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema (..), SchemaType)
-import VoidTalon.TUI.Types (Name (NToolManagerEntry, NToolManagerVP), toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
+import VoidTalon.TUI.Types (Name (NToolManagerEntry, NToolManagerVP), toolManagerSchemaKeyA, toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
 import qualified VoidTalon.Tools as Tools
 
 -- | Current state of a registered tool.
@@ -105,8 +109,8 @@ draw Manager {states, selected} = hBox [list, vBorder, schemaView]
         . T.intercalate "/"
         . (T.show <$>)
 
-    schemaWidget :: Schema -> Widget n
-    schemaWidget Schema {types, properties, required, description} =
+    schemaWidget :: Either Schema J.Value -> Widget n
+    schemaWidget (Left Schema {types, properties, required, description}) =
       if null properties then top else top <=> (padLeft (Pad 2) $ vBox $ propertyWidget <$> properties)
       where
         top =
@@ -116,7 +120,21 @@ draw Manager {states, selected} = hBox [list, vBorder, schemaView]
               (txtWrap $ fromMaybe "<no description>" description)
         propertyWidget (name, schema) =
           txt (name <> if elem name required then ": " else "?: ")
-            <+> schemaWidget schema
+            <+> schemaWidget (Left schema)
+    schemaWidget (Right (J.Object v)) = vBox $ elemWidget <$> (AK.toList v)
+      where
+        elemWidget (i, el) =
+          (withAttr toolManagerSchemaKeyA $ txt $ AK.toText i)
+            <+> padLeft (Pad 1) (schemaWidget $ Right el)
+    schemaWidget (Right (J.Array v)) = vBox $ elemWidget <$> zip [0 ..] (toList v)
+      where
+        elemWidget (i, el) =
+          (withAttr toolManagerSchemaKeyA $ txt $ mconcat ["[", T.show (i :: Int), "]"])
+            <+> padLeft (Pad 1) (schemaWidget $ Right el)
+    schemaWidget (Right (J.String t)) = txtWrap t
+    schemaWidget (Right (J.Number n)) = txt $ T.show n
+    schemaWidget (Right (J.Bool b)) = txt $ T.show b
+    schemaWidget (Right J.Null) = txt "null"
 
 drawState :: Bool -> ToolState -> Widget n
 drawState selected (enabled, name, Tools.Tool {description = Tools.Description {description}}) =

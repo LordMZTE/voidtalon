@@ -117,7 +117,8 @@ app =
                 (V.red `on` (V.Color240 $ 235 - 16))
                   { V.attrStyle = V.SetTo V.bold
                   }
-              )
+              ),
+              (toolManagerSchemaKeyA, fg V.green)
             ]
     }
 

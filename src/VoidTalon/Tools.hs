@@ -24,7 +24,8 @@ import VoidTalon.JSON (Schema, ToJSONEncoding (..))
 data Description = Description
   { -- | An explanation of what the tool does.  Must not contain ANSI escapes or carriage returns.
     description :: T.Text,
-    schema :: Schema
+    -- | For why this isn't a `Schema`, refer to the rand in the MCP code.
+    schema :: Either Schema Value
   }
 
 data NamedDescription = NamedDescription T.Text Description
@@ -39,7 +40,12 @@ instance ToJSONEncoding NamedDescription where
               mconcat
                 [ "name" .= name,
                   "description" .= description,
-                  pair "parameters" (toEncoding schema)
+                  pair
+                    "parameters"
+                    ( case schema of
+                        Left s -> toEncoding s
+                        Right e -> toEncoding e
+                    )
                 ]
           )
 

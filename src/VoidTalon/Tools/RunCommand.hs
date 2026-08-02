@@ -18,18 +18,19 @@ description =
         "Run a command in a POSIX-compliant shell\n"
           <> "Note that shell state (i.e. environment variables) is **NOT** preserved across tool calls.",
       schema =
-        emptySchema
-          { types = [SchemaTypeObject],
-            properties =
-              [ ( "command",
-                  emptySchema
-                    { types = [SchemaTypeString],
-                      description = Just "The command to run"
-                    }
-                )
-              ],
-            required = ["command"]
-          }
+        Left $
+          emptySchema
+            { types = [SchemaTypeObject],
+              properties =
+                [ ( "command",
+                    emptySchema
+                      { types = [SchemaTypeString],
+                        description = Just "The command to run"
+                      }
+                  )
+                ],
+              required = ["command"]
+            }
     }
 
 newtype Parameters = Parameters T.Text

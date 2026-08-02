@@ -138,7 +138,7 @@ makeToolForSpec con ToolSpec {name, inputSchema, description} =
     { description =
         Tools.Description
           { description,
-            schema = inputSchema
+            schema = Right inputSchema
           },
       invoke
     }

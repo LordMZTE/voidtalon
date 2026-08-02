@@ -3,11 +3,15 @@
 
 module VoidTalon.Tools.ReadFile (tool) where
 
-import Data.Aeson
+import Data.Aeson hiding (toEncoding)
 import Data.Char (isSpace)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
-import VoidTalon.JSON (Schema (..), SchemaType (SchemaTypeObject, SchemaTypeString), emptySchema)
+import VoidTalon.JSON
+  ( Schema (..),
+    SchemaType (SchemaTypeObject, SchemaTypeString),
+    emptySchema,
+  )
 import VoidTalon.Tools
 
 description :: Description
@@ -15,18 +19,19 @@ description =
   Description
     { description = "Read a file given a path",
       schema =
-        emptySchema
-          { types = [SchemaTypeObject],
-            properties =
-              [ ( "path",
-                  emptySchema
-                    { types = [SchemaTypeString],
-                      description = Just "Path of the file to read"
-                    }
-                )
-              ],
-            required = ["path"]
-          }
+        Left $
+          emptySchema
+            { types = [SchemaTypeObject],
+              properties =
+                [ ( "path",
+                    emptySchema
+                      { types = [SchemaTypeString],
+                        description = Just "Path of the file to read"
+                      }
+                  )
+                ],
+              required = ["path"]
+            }
     }
 
 newtype Parameters = Parameters FilePath
