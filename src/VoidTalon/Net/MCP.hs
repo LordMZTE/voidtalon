@@ -21,6 +21,7 @@ import qualified Data.Aeson.KeyMap as AKM
 import Data.Bifunctor (bimap)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as LBS8
+import Data.Foldable (toList)
 import qualified Data.Text as T
 import PackageInfo_voidtalon (homepage, synopsis, version)
 import System.IO (Handle, hFlush)
@@ -32,10 +33,9 @@ import System.Process
     std_err,
     terminateProcess,
   )
-import VoidTalon.JSON (ToJSONEncoding (toEncoding))
+import VoidTalon.JSON (ParseEither (PLeft, PRight), ToJSONEncoding (toEncoding))
 import VoidTalon.Net.MCP.Types
 import qualified VoidTalon.Tools as Tools
-import Data.Foldable (toList)
 
 -- | The parameters passed to the "initialize" method.
 initializationParams :: Encoding
@@ -95,11 +95,15 @@ jsonRPCCall Connection {transport, nextId} method params = do
         hFlush transport.stdin
     )
       >> pure i
-  reply <- BS8.hGetLine transport.stdout
-  pure $ case eitherDecode $ LBS8.fromStrict reply of
-    Left e -> Left $ RPCFailureDecode e
-    Right (JSONRPCReply {id = id'}) | id' /= callID -> Left RPCFailureIDMismatch
-    Right (JSONRPCReply {result}) -> Right result
+  receiveReply callID
+  where
+    receiveReply callID = do
+      reply <- BS8.hGetLine transport.stdout
+      case eitherDecode $ LBS8.fromStrict reply of
+        Left e -> pure $ Left $ RPCFailureDecode e
+        Right (PLeft JSONRPCReply {id = id'}) | id' /= callID -> pure $ Left RPCFailureIDMismatch
+        Right (PLeft JSONRPCReply {result}) -> pure $ Right result
+        Right (PRight JSONRPCEvent {}) -> receiveReply callID
 
 -- | Perform initialization on an MCP connection
 performInitialization :: Connection -> IO (Either InitFailure [(T.Text, Tools.Tool)])
@@ -162,7 +166,7 @@ jsonPlan :: T.Text -> Value -> Tools.Plan
 jsonPlan p (Object o) = concatMap elemPlan $ AKM.toList o
   where
     elemPlan (k, v) = let p' = mconcat [p, ".", toText k] in jsonPlan p' v
-jsonPlan p (Array a) = concatMap elemPlan $ zip [0..] (toList a)
+jsonPlan p (Array a) = concatMap elemPlan $ zip [0 ..] (toList a)
   where
     elemPlan (k, v) = let p' = mconcat [p, "[", T.show (k :: Int), "]"] in jsonPlan p' v
 jsonPlan p (String txt) = [(p, txt)]

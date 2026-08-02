@@ -10,9 +10,11 @@ module VoidTalon.JSON
     SchemaType (..),
     Schema (..),
     emptySchema,
+    ParseEither (..),
   )
 where
 
+import Control.Applicative ((<|>))
 import Data.Aeson hiding (toEncoding)
 import qualified Data.Aeson as J
 import Data.Aeson.Encoding
@@ -104,3 +106,9 @@ instance ToJSONEncoding Schema where
       encodedTypes = case types of
         [t] -> toEncoding t
         l -> list toEncoding l
+
+-- | Like Either, but Aeson parses it by trying both variants, preferring the left.
+data ParseEither l r = PLeft l | PRight r
+
+instance (FromJSON l, FromJSON r) => FromJSON (ParseEither l r) where
+  parseJSON v = (PLeft <$> parseJSON v) <|> (PRight <$> parseJSON v)

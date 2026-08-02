@@ -6,6 +6,7 @@ module VoidTalon.Net.MCP.Types
     methodToolsCall,
     JSONRPCMessage (..),
     JSONRPCReply (..),
+    JSONRPCEvent (..),
     ServerCapabilities (..),
     InitializeReply (..),
     RPCFailure (..),
@@ -52,6 +53,16 @@ instance (FromJSON r) => FromJSON (JSONRPCReply r) where
     JSONRPCReply
       <$> (v .: "id")
       <*> (v .: "result")
+  parseJSON _ = mempty
+
+-- | An event such as a notification sent by an MCP server while we were waiting for a response.
+data JSONRPCEvent = JSONRPCEvent {method :: T.Text, params :: Value}
+
+instance FromJSON JSONRPCEvent where
+  parseJSON (Object v) =
+    JSONRPCEvent
+      <$> (v .: "method")
+      <*> (v .: "params")
   parseJSON _ = mempty
 
 data ServerCapabilities = ServerCapabilities {tools :: Bool}
