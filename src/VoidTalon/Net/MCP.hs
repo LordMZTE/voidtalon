@@ -16,6 +16,8 @@ import Control.Concurrent (MVar, modifyMVar, newMVar)
 import Control.Exception (throwIO)
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
+import Data.Aeson.Key (toText)
+import qualified Data.Aeson.KeyMap as AKM
 import Data.Bifunctor (bimap)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as LBS8
@@ -33,6 +35,7 @@ import System.Process
 import VoidTalon.JSON (ToJSONEncoding (toEncoding))
 import VoidTalon.Net.MCP.Types
 import qualified VoidTalon.Tools as Tools
+import Data.Foldable (toList)
 
 -- | The parameters passed to the "initialize" method.
 initializationParams :: Encoding
@@ -142,7 +145,7 @@ makeToolForSpec con ToolSpec {name, inputSchema, description} =
   where
     invoke input = do
       val <- eitherDecodeStrictText input
-      pure ([], perform (val :: Value))
+      pure (jsonPlan T.empty val, perform val)
     perform val = do
       let params =
             pairs $
@@ -154,3 +157,15 @@ makeToolForSpec con ToolSpec {name, inputSchema, description} =
       case reply of
         Left err -> throwIO err
         Right (ToolCallReply reply') -> pure reply'
+
+jsonPlan :: T.Text -> Value -> Tools.Plan
+jsonPlan p (Object o) = concatMap elemPlan $ AKM.toList o
+  where
+    elemPlan (k, v) = let p' = mconcat [p, ".", toText k] in jsonPlan p' v
+jsonPlan p (Array a) = concatMap elemPlan $ zip [0..] (toList a)
+  where
+    elemPlan (k, v) = let p' = mconcat [p, "[", T.show (k :: Int), "]"] in jsonPlan p' v
+jsonPlan p (String txt) = [(p, txt)]
+jsonPlan p (Number n) = [(p, T.show n)]
+jsonPlan p (Bool b) = [(p, T.show b)]
+jsonPlan p Null = [(p, "null")]
