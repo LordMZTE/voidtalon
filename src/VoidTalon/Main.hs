@@ -3,7 +3,7 @@
 module VoidTalon.Main (main) where
 
 import Brick.Main (customMainWithDefaultVty)
-import Control.Exception (try)
+import Control.Exception (try, throwIO)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
@@ -26,6 +26,8 @@ import qualified VoidTalon.Tools.ReadFile
 import qualified VoidTalon.Tools.RunCommand
 import qualified VoidTalon.Tools.WriteFile
 import VoidTalon.Util (BufferedBChan(ch), newBufferedBChan)
+import qualified VoidTalon.Net.MCP as MCP
+import System.Process (shell)
 
 main :: IO ()
 main = do
@@ -45,10 +47,12 @@ main = do
   model <- case models of
     m : _ -> pure m
     _ -> fail "The server reported an empty list of models!"
+  mcps <- startStdioMCPServers args.mcp
   chan <- newBufferedBChan
-  initState <- TUI.mkInitialState config chan httpMan model builtinTools
+  initState <- TUI.mkInitialState config chan httpMan model (builtinTools ++ concatMap snd mcps)
   (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty
+  sequence_ (MCP.closeConnection . fst <$> mcps)
 
 readConfig :: FilePath -> IO Text
 readConfig path = do
@@ -68,3 +72,15 @@ builtinTools =
     ("write_file", VoidTalon.Tools.WriteFile.tool),
     ("run_command", VoidTalon.Tools.RunCommand.tool)
   ]
+
+startStdioMCPServers :: [String] -> IO [(MCP.Connection, [(T.Text, Tools.Tool)])]
+startStdioMCPServers = sequence . fmap startOne
+  where
+    startOne cmd = do
+      putStrLn $ "starting MCP server `" <> cmd <> "`"
+      let spec = shell cmd
+      mcp <- MCP.spawnStdio spec
+      initRes <- MCP.performInitialization mcp
+      case initRes of
+        Left err -> throwIO err
+        Right tools -> pure (mcp, tools)

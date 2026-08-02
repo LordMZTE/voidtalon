@@ -4,7 +4,8 @@ import Options.Applicative
 import PackageInfo_voidtalon (synopsis)
 
 data Arguments = Arguments
-  { config :: Maybe String
+  { config :: Maybe String,
+    mcp :: [String]
   }
 
 parser :: Parser Arguments
@@ -16,6 +17,14 @@ parser =
               <> short 'c'
               <> metavar "CONFIG"
               <> help "Override configuration file"
+          )
+      )
+    <*> many
+      ( strOption
+          ( long "mcp"
+              <> short 'm'
+              <> metavar "COMMAND"
+              <> help "Use an MCP server over stdio.  May be passed multiple times.  Accepts a POSIX shell command."
           )
       )
 
