@@ -122,9 +122,6 @@ app =
             ]
     }
 
-outputVPScroll :: ViewportScroll Name
-outputVPScroll = viewportScroll NTimelineVP
-
 effectiveFocus :: State -> Maybe Name
 effectiveFocus st = if null st.pendingTools then focusGetCurrent st.focus else Just NToolDialog
 
@@ -183,8 +180,8 @@ handleEvent :: BrickEvent Name [Event] -> EventM Name State ()
 -- Exit with <C-q>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
 -- Scroll with <C-e> and <C-y>
-handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy outputVPScroll 1
-handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy outputVPScroll $ -1
+handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll 1
+handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll $ -1
 -- Change focus with <C-w>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
   stateFocusL %= focusNext
@@ -219,7 +216,9 @@ handleEvent ev = do
           statePromptEditorL %= applyEdit clearZipper
 
           -- append prompt to timeline
-          stateTimelineL . Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
+          zoom stateTimelineL $ do
+            Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
+            Timeline.stickToBottom
 
           startCompletions
 
@@ -276,10 +275,12 @@ handleEvent ev = do
             Tools.CallID ->
             T.Text ->
             [(Maybe T.Text, T.Text, Tools.Invocation)] ->
-            EventM n State ()
+            EventM Name State ()
           finishTool id' content rest = do
             let entry = Timeline.ToolResultEntry {id = id', content = content}
-            stateTimelineL . Timeline.stateEntriesL %= (entry :)
+            zoom stateTimelineL $ do
+              Timeline.stateEntriesL %= (entry :)
+              Timeline.stickToBottom
             statePendingToolsL .= rest
             when (null rest && isStopped st.runState) startCompletions
        in case (st.pendingTools, ev) of
@@ -326,22 +327,12 @@ startCompletions = do
 
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
-handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = do
+handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = zoom stateTimelineL $ do
   -- append text to output
-  stateTimelineL . Timeline.stateEntriesL %= \case
+  Timeline.stateEntriesL %= \case
     (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
     tl -> (Timeline.OutputEntry added) : tl
-  -- stick to bottom
-  maybeVP <- lookupViewport NTimelineVP
-  case maybeVP of
-    Just vp ->
-      let top = vp ^. vpTop
-          (_, vpHeight) = vp ^. vpSize
-          (_, contentHeight) = vp ^. vpContentSize
-          visCols = contentHeight - top
-          isAtBottom = visCols <= vpHeight
-       in when isAtBottom $ vScrollToEnd outputVPScroll
-    Nothing -> pure ()
+  Timeline.stickToBottom
 handleAppEvent (EvCompletionUpdate (UpdateStop reason)) = do
   stateRunStateL .= RunStateStopped reason
   st <- get
@@ -349,13 +340,15 @@ handleAppEvent (EvCompletionUpdate (UpdateStop reason)) = do
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
       let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
       -- Append broken calls to timeline right away
-      stateTimelineL . Timeline.stateEntriesL
-        %= ( ( uncurry Timeline.ToolResultEntry
-                 . (("Error: " <>) . T.pack <$>)
-                 <$> brokenCalls
+      zoom stateTimelineL $ do
+        Timeline.stateEntriesL
+          %= ( ( uncurry Timeline.ToolResultEntry
+                   . (("Error: " <>) . T.pack <$>)
+                   <$> brokenCalls
+               )
+                 ++
              )
-               ++
-           )
+        Timeline.stickToBottom
       -- Schedule valid calls for review
       statePendingToolsL .= calls
     _ -> pure ()

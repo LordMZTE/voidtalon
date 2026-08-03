@@ -9,6 +9,8 @@ module VoidTalon.TUI.Timeline
     entryWidget,
     draw,
     editEntry,
+    outputVPScroll,
+    stickToBottom,
   )
 where
 
@@ -28,6 +30,8 @@ import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
 import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (editInEditor)
+import Lens.Micro
+import Control.Monad (when)
 
 data State = State
   { -- | Index of the element in the timeline that's focused.  Starts from the bottom.
@@ -119,3 +123,20 @@ editEntry (TL.ToolResultEntry {id = id', content}) = do
   edited <- editInEditor "md" $ LT.fromStrict content
   -- Can't use update syntax here because that gets us some weird compiler warning
   pure $ TL.ToolResultEntry {id = id', TL.content = LT.toStrict edited}
+
+
+outputVPScroll :: ViewportScroll Name
+outputVPScroll = viewportScroll NTimelineVP
+
+stickToBottom :: EventM Name State ()
+stickToBottom = do
+  maybeVP <- lookupViewport NTimelineVP
+  case maybeVP of
+    Just vp ->
+      let top = vp ^. vpTop
+          (_, vpHeight) = vp ^. vpSize
+          (_, contentHeight) = vp ^. vpContentSize
+          visCols = contentHeight - top
+          isAtBottom = visCols <= vpHeight
+       in when isAtBottom $ vScrollToEnd outputVPScroll
+    Nothing -> pure ()
