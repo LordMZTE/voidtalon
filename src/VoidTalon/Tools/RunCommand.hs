@@ -3,11 +3,22 @@
 module VoidTalon.Tools.RunCommand (tool) where
 
 import Data.Aeson
+import qualified Data.ByteString.Builder as BSB
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Data.Char (isSpace)
 import qualified Data.Text as T
-import qualified Data.Text.IO.Utf8 as TIO8
+import qualified Data.Text.Encoding as T
 import System.Exit (ExitCode (..))
-import System.Process (StdStream (CreatePipe), createProcess, shell, std_out, waitForProcess)
+import System.IO (Handle, stdout)
+import System.Process
+  ( CreateProcess (std_err),
+    StdStream (CreatePipe, UseHandle),
+    createProcess,
+    shell,
+    std_out,
+    waitForProcess,
+  )
 import VoidTalon.JSON (Schema (..), SchemaType (SchemaTypeObject, SchemaTypeString), emptySchema)
 import VoidTalon.Tools
 
@@ -45,12 +56,13 @@ invoke val = do
   pure ([("Command", command)], perform command)
   where
     perform command = do
-      let spec = (shell (T.unpack command)) {std_out = CreatePipe}
-      (Nothing, Just stdout, Nothing, pid) <- createProcess spec
-      output <- TIO8.hGetContents stdout
+      -- This is a cool trick to bind stdout and stderr to the same pipe.
+      let spec = (shell (T.unpack command)) {std_out = CreatePipe, std_err = UseHandle stdout}
+      (Nothing, Just out, Nothing, pid) <- createProcess spec
+      output <- consumeAndEcho out
       exit <- waitForProcess pid
 
-      let output' = case output of
+      let output' = case T.decodeUtf8Lenient . LBS8.toStrict . BSB.toLazyByteString $ output of
             o | T.null o -> "<no output>"
             o | T.all isSpace o -> "<only whitespace in output>"
             o -> o
@@ -64,6 +76,16 @@ invoke val = do
               "\n",
               output'
             ]
+    consumeAndEcho :: Handle -> IO BSB.Builder
+    consumeAndEcho h = do
+      output <- BS8.hGetSome h (8 * 1024)
+      if BS8.null output
+        then pure mempty
+        else do
+          BS8.putStr output
+          let output' = BSB.byteString output
+          more <- consumeAndEcho h
+          pure $ output' <> more
 
 tool :: Tool
 tool = Tool {description, invoke}
