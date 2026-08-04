@@ -20,10 +20,33 @@ Yes, I was having a laugh when I wrote this.
 | **Language**          | ❌ P\*thon        | ❌ Rust              | ❌ TypeShit               | ✅ Haskell |
 | **RAM**               | ❌ > 100MB        | ✅ < 5 MB            | ❌ > 1 GB                 | ❌ ~100MB  |
 | **Built-in Tools**    | ❌ 19 (??)        | ❌ 25 (???)          | ❌ ∞ (????)               | ✅ 3       |
-| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 1800    |
+| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 2500    |
 | **Unusable Slopware** | ❔ dunno          | ❌ yes               | ❌ yes                    | ✅ no      |
 
 You might also notice the missing "startup time" row, which is because I didn't bother to measure
 it. While this is a large number for some of our competitors (no idea why), it's a completely
 ridiculous metric for any sane project. To you VoidTalon, you `cd` into the directory where you
 want to work and then run `vt`. There is no noticable delay in startup.
+
+## Features
+
+- [x] Vim-inspired keybindings (not modal yet)
+- [x] Tool calling
+    - [x] MCP over stdio (HTTP is coming soon)
+    - [x] A small, no-nonsense collection of built-in tools (see below)
+- [x] Interactive editing of messages
+- [x] Completions via an OpenAI-compatible API, tested with llama.cpp
+- [x] Reporting of token count and TPS (the latter is only supported on llama.cpp)
+- [x] User confirmation dialog for all tool calls
+- [x] Fancy TUI markdown rendering and syntax highlighting for code blocks
+- [x] Managing tools, each tool can be individiually enabled and disabled, schema and description
+      are shown
+
+## Built-in tools
+
+- `read_file` / `write_file` reading and writing files by path
+- `run_command` run a shell command, forwarding stdout and stderr to both the user and the LLM,
+  stdin is connected to user for control.
+
+This is open for suggestions, just nothing too bloated (there will be no web search function here,
+use an appropriate MCP server!)
