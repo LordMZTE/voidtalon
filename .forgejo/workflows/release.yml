@@ -31,3 +31,4 @@ jobs:
           direction: upload
           token: ${{ env.GITHUB_TOKEN }}
           release-notes-file: ${{ steps.changelog.outputs.changelog }}
+          skip-assets: true
