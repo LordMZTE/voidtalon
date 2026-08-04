@@ -1,7 +1,7 @@
 cabal-version:       3.12
 
 name:                voidtalon
-version:             0.1.0.0
+version:             0.1.1.0
 homepage:            https://git.mzte.de/LordMZTE/voidtalon
 synopsis:            Lean TUI for OpenAI-compatible LLMs with MCP and tools.
 license:             GPL-3.0-or-later
