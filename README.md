@@ -2,7 +2,7 @@
 
 > _not a claw_
 
----
+![demo video](./demo.mp4)
 
 VoidTalon is a lightweight yet feature-complete TUI for chatting with an LLM provided via an
 OpenAI-compatible API such as llama.cpp that doesn't claim to be an "aGeNt".
