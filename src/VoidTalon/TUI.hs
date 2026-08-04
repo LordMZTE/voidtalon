@@ -209,8 +209,12 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
   stateFocusL %= focusNext
   cur <- focusGetCurrent <$> gets (.focus)
   -- If we've just focused the timeline, reset focused element to last entry
-  when (cur == Just NTimelineVP) $ stateTimelineL . Timeline.stateFocusL .= 0
-  makeVisible $ NTimelineEntry 0
+  when (cur == Just NTimelineVP) $ do
+    stateTimelineL . Timeline.stateFocusL .= 0
+    makeVisible $ NTimelineEntry 0
+  -- When we change timeline focus, we invalidate the whole cache.  This is because calculating
+  -- which element has LOST focus due to the focus change is too error-prone and not worth the risk.
+  invalidateCache
 -- Stop ongoing completions with <C-c>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
   st <- get
@@ -259,21 +263,27 @@ handleEvent ev = do
               n -> n
         stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
+        invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
         let new = case st.timeline.focus - 1 of
               n | n < 0 -> subtract 1 $ length st.timeline.entries
               n -> n
         stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
+        invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
         let idx = max 0 (st.timeline.focus)
         stateTimelineL . Timeline.stateEntriesL %= remove idx
+        -- We need to invalidate the cache because indices just shifted.
+        invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
+        let focus = st.timeline.focus
         suspendAndResume $
           mapMOf
-            (stateTimelineL . Timeline.stateEntriesL . ix st.timeline.focus)
+            (stateTimelineL . Timeline.stateEntriesL . ix focus)
             (liftIO . Timeline.editEntry)
             st
+        invalidateCacheEntry $ NTimelineEntry focus
       (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
         -- tail of the timeline with the selected entry being the last one
         let tl' = drop st.timeline.focus $ st.timeline.entries
@@ -290,6 +300,7 @@ handleEvent ev = do
         unless (null tl) $ do
           stateTimelineL . Timeline.stateEntriesL .= tl
           startCompletions
+        invalidateCache
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent ev
     Just NToolDialog ->
@@ -303,6 +314,7 @@ handleEvent ev = do
             zoom stateTimelineL $ do
               Timeline.stateEntriesL %= (entry :)
               Timeline.stickToBottom
+            invalidateCache
             statePendingToolsL .= rest
             when (null rest && isStopped st.runState) startCompletions
        in case (st.pendingTools, ev) of
@@ -351,9 +363,16 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
   stateStatsL .= stats
   zoom stateTimelineL $ do
     -- append text to output
-    Timeline.stateEntriesL %= \case
-      (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
-      tl -> (Timeline.OutputEntry added) : tl
+    ents <- gets (.entries)
+    case ents of
+      (Timeline.OutputEntry prev) : tl -> do
+        Timeline.stateEntriesL .= (Timeline.OutputEntry (prev <> added)) : tl
+        -- We modified the last timeline entry, i.e. the one with index 0.
+        invalidateCacheEntry $ NTimelineEntry 0
+      tl -> do
+        Timeline.stateEntriesL .= (Timeline.OutputEntry added) : tl
+        -- We added a new timeline entry, shifting indices.  Invalidate entire cache.
+        invalidateCache
     Timeline.stickToBottom
 handleAppEvent (EvCompletionUpdate (UpdateStop reason)) =
   stateLastStopReasonL .= Just reason
@@ -381,6 +400,7 @@ handleAppEvent EvCompletionDone = do
         Timeline.stickToBottom
       -- Schedule valid calls for review
       statePendingToolsL .= calls
+      invalidateCache -- index shift
     _ -> pure ()
   where
     prepareInvocation ::

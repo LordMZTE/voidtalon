@@ -17,11 +17,13 @@ where
 import Brick
 import Brick.Widgets.Border
 import Brick.Widgets.Center
+import Control.Monad (when)
 import Data.Function (applyWhen)
 import qualified Data.IntMap as IntMap
 import qualified Data.Map.Lazy as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import Lens.Micro
 import Lens.Micro.TH
 import Skylighting as SL
 import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
@@ -30,8 +32,6 @@ import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
 import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (editInEditor)
-import Lens.Micro
-import Control.Monad (when)
 
 data State = State
   { -- | Index of the element in the timeline that's focused.  Starts from the bottom.
@@ -96,7 +96,11 @@ draw focused State {focus, entries} =
     . fst
     $ foldl
       ( \(l, n) e ->
-          ( (reportExtent (NTimelineEntry n) $ entryWidget (focused && n == focus) e) : l,
+          ( ( reportExtent (NTimelineEntry n)
+                . cached (NTimelineEntry n)
+                $ entryWidget (focused && n == focus) e
+            )
+              : l,
             n + 1
           )
       )
@@ -123,7 +127,6 @@ editEntry (TL.ToolResultEntry {id = id', content}) = do
   edited <- editInEditor "md" $ LT.fromStrict content
   -- Can't use update syntax here because that gets us some weird compiler warning
   pure $ TL.ToolResultEntry {id = id', TL.content = LT.toStrict edited}
-
 
 outputVPScroll :: ViewportScroll Name
 outputVPScroll = viewportScroll NTimelineVP
