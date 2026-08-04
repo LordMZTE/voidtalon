@@ -4,6 +4,7 @@ module VoidTalon.Net.MCP.Types
   ( methodInitialize,
     methodToolsList,
     methodToolsCall,
+    methodNotifInitialized,
     JSONRPCMessage (..),
     JSONRPCReply (..),
     JSONRPCEvent (..),
@@ -33,6 +34,9 @@ methodToolsList = "tools/list"
 
 methodToolsCall :: T.Text
 methodToolsCall = "tools/call"
+
+methodNotifInitialized :: T.Text
+methodNotifInitialized = "notifications/initialized"
 
 data JSONRPCMessage = JSONRPCMessage {id :: Maybe Int, method :: T.Text, params :: Encoding}
 

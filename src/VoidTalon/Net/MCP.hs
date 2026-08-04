@@ -117,7 +117,9 @@ performInitialization con = do
           }
         ) ->
         pure $ Left InitFailureNoTools
-    Right _ ->
+    Right _ -> do
+      LBS8.hPutStrLn con.transport.stdin . encodingToLazyByteString . toEncoding
+        $ JSONRPCMessage {params=emptyObject_, method=methodNotifInitialized, id=Nothing}
       bimap InitFailureRPC (liftA2 (,) (.name) (makeToolForSpec con) <$>)
         <$> listTools con Nothing
 
