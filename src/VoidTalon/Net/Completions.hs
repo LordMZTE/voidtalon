@@ -171,16 +171,19 @@ data TokenStats = TokenStats
     -- hold up the neutral element monoid law)
     tps :: Float
   }
+  deriving (Eq)
 
 -- | Stats to be used when the actual data is unknown
 emptyStats :: TokenStats
 emptyStats = TokenStats {nPrompt = 0, nCompletion = 0, tps = 0.0}
 
--- | @TokenStats@ is a Semigroup where the associative operation simply returns the second stats.
+-- | @TokenStats@ is a Semigroup where the associative operation simply returns the second stats,
+-- unless those are empty, indicating the API didn't report them.
 -- This reflects the fact that we assume the second argument to be a more recent update than the
 -- first.
 instance Semigroup TokenStats where
-  (<>) = flip const
+  a <> b | b == emptyStats = a
+  _ <> b = b
 
 -- | Parse stats from the "usage" object returned by the OAI API
 parseStatsOAI :: Object -> Parser TokenStats
