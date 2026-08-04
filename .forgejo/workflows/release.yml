@@ -4,7 +4,7 @@ on:
       - 'v*'
 
 jobs:
-  compile:
+  upload-changelog:
     runs-on: docker
     steps:
       - name: Checkout
