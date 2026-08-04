@@ -26,13 +26,13 @@ import qualified Data.Text as T
 import VoidTalon.Net.Completions (Update (UpdateMessage))
 import VoidTalon.Util (SemiSemigroup ((<>?)))
 
-data Event =
-  EvCompletionUpdate Update
+data Event
+  = EvCompletionUpdate Update
   | EvCompletionDone
 
 instance SemiSemigroup Event where
-  EvCompletionUpdate (UpdateMessage a) <>? EvCompletionUpdate (UpdateMessage b) =
-    Just $ EvCompletionUpdate (UpdateMessage $ a <> b)
+  EvCompletionUpdate (UpdateMessage ma sa) <>? EvCompletionUpdate (UpdateMessage mb sb) =
+    Just $ EvCompletionUpdate (UpdateMessage (ma <> mb) (sa <> sb))
   _ <>? _ = Nothing
 
 data Name

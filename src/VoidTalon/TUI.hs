@@ -32,6 +32,7 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
+import Text.Printf (printf)
 import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
@@ -58,6 +59,7 @@ data State = State
     -- finishes the request response, at which point this is transferred to runState.
     lastStopReason :: Maybe T.Text,
     runState :: RunState,
+    stats :: Completions.TokenStats,
     -- | Tools that the model requested but the user hasn't reviewed yet.
     -- (id, name, invocation)
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
@@ -70,6 +72,7 @@ makeLensesFor
     ("timeline", "stateTimelineL"),
     ("lastStopReason", "stateLastStopReasonL"),
     ("runState", "stateRunStateL"),
+    ("stats", "stateStatsL"),
     ("pendingTools", "statePendingToolsL"),
     ("tools", "stateToolsL")
   ]
@@ -94,6 +97,7 @@ mkInitialState config evchan httpMan model tools =
         timeline = Timeline.initialState,
         lastStopReason = Nothing,
         runState = RunStateStopped "stop",
+        stats = Completions.emptyStats,
         pendingTools = [],
         tools = TM.newManager tools
       }
@@ -168,9 +172,21 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
     statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
-    statusBarRight = txt $ case st.runState of
-      RunStateStopped reason -> reason
-      RunStateRunning _ -> "running"
+    statusBarRight =
+      txt $
+        let run = case st.runState of
+              RunStateStopped reason -> reason
+              RunStateRunning _ -> "running"
+            Completions.TokenStats {tps, nCompletion, nPrompt} = st.stats
+         in mconcat
+              [ T.show nPrompt,
+                " in ",
+                T.show nCompletion,
+                " out ",
+                T.pack $ printf "%.2f" tps,
+                "/s ",
+                run
+              ]
     statusBarLeft = txt $ globalHelp <> localHelp
 
     globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel"
@@ -320,15 +336,10 @@ startCompletions = do
   thread <-
     liftIO $
       Completions.perform
-        ( flip Util.writeBufferedBChan (st.evchan)
-            . EvCompletionUpdate
-        )
-        ( do
-            Util.writeBufferedBChan EvCompletionDone st.evchan
-            Util.flushBufferedBChan st.evchan
-        )
-        (st.config).connection.base_url.inner
-        (st.httpMan)
+        (flip Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
+        (Util.blockWriteBufferedBChan EvCompletionDone st.evchan)
+        st.config.connection.base_url.inner
+        st.httpMan
         ctx
 
   -- set runStatus to running
@@ -336,18 +347,25 @@ startCompletions = do
 
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
-handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = zoom stateTimelineL $ do
-  -- append text to output
-  Timeline.stateEntriesL %= \case
-    (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
-    tl -> (Timeline.OutputEntry added) : tl
-  Timeline.stickToBottom
+handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
+  stateStatsL .= stats
+  zoom stateTimelineL $ do
+    -- append text to output
+    Timeline.stateEntriesL %= \case
+      (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
+      tl -> (Timeline.OutputEntry added) : tl
+    Timeline.stickToBottom
 handleAppEvent (EvCompletionUpdate (UpdateStop reason)) =
   stateLastStopReasonL .= Just reason
 handleAppEvent EvCompletionDone = do
   st <- get
   stateLastStopReasonL .= Nothing
-  stateRunStateL .= RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason)
+  stateRunStateL %= \case
+    s@(RunStateStopped _) ->
+      -- if we're already stopped, probably due to the user cancelling the completions, keep the
+      -- reason.
+      s
+    RunStateRunning _ -> (RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason))
   case st.timeline.entries of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
       let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls

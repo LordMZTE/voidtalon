@@ -7,9 +7,12 @@ module VoidTalon.Net.Completions
   ( perform,
     Context (..),
     Update (..),
+    TokenStats (..),
+    emptyStats,
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Concurrent (ThreadId, forkIO)
 import Control.Exception (finally)
 import Data.Aeson hiding (toEncoding)
@@ -97,10 +100,10 @@ perform evchan done uri http ctx = do
     mkCtxRequestBody = encodingToLazyByteString . toEncoding
 
     updateFromRaw :: RawUpdate -> IO ()
-    updateFromRaw RawUpdate {choices} =
+    updateFromRaw RawUpdate {choices, stats} =
       sequence_ $
         choices <&> \ch -> do
-          fromMaybe (pure ()) $ (evchan . UpdateMessage) <$> ch.message
+          fromMaybe (pure ()) $ (evchan . flip UpdateMessage stats) <$> ch.message
           fromMaybe (pure ()) $ (evchan . UpdateStop) <$> ch.stop
 
 data Context = Context
@@ -116,6 +119,12 @@ instance ToJSONEncoding Context where
       mconcat
         [ "stream" .= True,
           "model" .= model,
+          -- This will make the last event include statistics about the token count.  This is part
+          -- of the OpenAI API.
+          pair "stream_options" (pairs $ "include_usage" .= True),
+          -- This is regarding token timings - a llama.cpp extension that also supersedes the
+          -- include_usage setting above, but we use that as a fallback.
+          "timings_per_token" .= True,
           pair "messages" (list encodeEntry timeline),
           pair "tools" (list encodeTool tools)
         ]
@@ -150,17 +159,65 @@ instance ToJSONEncoding Context where
             )
 
 data Update
-  = UpdateMessage {delta :: LLMMessage}
+  = UpdateMessage {delta :: LLMMessage, stats :: TokenStats}
   | UpdateStop {reason :: T.Text}
 
+data TokenStats = TokenStats
+  { -- | Number of tokens in the prompt
+    nPrompt :: Word,
+    -- | Number of tokens generated
+    nCompletion :: Word,
+    -- | Tokens per second (llama.cpp only).  This must be non-negative (because otherwise, we don't
+    -- hold up the neutral element monoid law)
+    tps :: Float
+  }
+
+-- | Stats to be used when the actual data is unknown
+emptyStats :: TokenStats
+emptyStats = TokenStats {nPrompt = 0, nCompletion = 0, tps = 0.0}
+
+-- | @TokenStats@ is a Semigroup where the associative operation simply returns the second stats.
+-- This reflects the fact that we assume the second argument to be a more recent update than the
+-- first.
+instance Semigroup TokenStats where
+  (<>) = flip const
+
+-- | Parse stats from the "usage" object returned by the OAI API
+parseStatsOAI :: Object -> Parser TokenStats
+parseStatsOAI v =
+  TokenStats
+    <$> (v .: "prompt_tokens")
+    <*> (v .: "completion_tokens")
+    <*> (pure 0) -- tps isn't known
+
+-- | Parse stats from the superior "timings" object returned by Llama.cpp
+parseStatsLlamaCpp :: Object -> Parser TokenStats
+parseStatsLlamaCpp v =
+  TokenStats
+    -- These are given as the number of tokens that has been cached and the rest that was processed
+    -- for this request.  We could consider reporting these individually, but for now, we just sum
+    -- up.
+    <$> (liftA2 (+) (v .: "cache_n") (v .: "prompt_n"))
+    <*> (v .: "predicted_n")
+    <*> (v .: "predicted_per_second")
+
 data RawUpdate = RawUpdate
-  { choices :: [Choice]
+  { choices :: [Choice],
+    stats :: TokenStats
   }
 
 instance FromJSON RawUpdate where
   parseJSON (Object v) =
     RawUpdate
       <$> v .: "choices"
+      <*> (
+            -- try to parse Llama.cpp timings first
+            (v .: "timings" >>= parseStatsLlamaCpp)
+              -- ...fall back to OAI metrics
+              <|> (v .: "usage" >>= parseStatsOAI)
+              -- if all else fails, use empty stats
+              <|> pure emptyStats
+          )
   parseJSON _ = mempty
 
 data Choice = Choice {stop :: Maybe T.Text, message :: Maybe LLMMessage}
