@@ -44,10 +44,13 @@ main = do
       mapM_ (hPutStrLn stderr) warns
       pure conf
   httpMan <- HTTP.newManager HTTP.tlsManagerSettings
-  models <- Models.list config.connection httpMan
-  model <- case models of
-    m : _ -> pure m
-    _ -> fail "The server reported an empty list of models!"
+  model <- case config.model.standard of
+    Just m -> pure m
+    Nothing -> do
+      models <- Models.list config.connection httpMan
+      case models of
+        m : _ -> pure m.id
+        _ -> fail "The server reported an empty list of models!"
   mcps <- startStdioMCPServers args.mcp
   chan <- newBufferedBChan
   initState <- TUI.mkInitialState config chan httpMan model (builtinTools ++ concatMap snd mcps)

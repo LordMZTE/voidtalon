@@ -36,7 +36,6 @@ import Text.Printf (printf)
 import VoidTalon.Config (Config (..))
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
-import VoidTalon.Net.Models (ModelInfo (id))
 import qualified VoidTalon.TUI.Timeline as Timeline
 import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
@@ -54,7 +53,7 @@ data State = State
     timeline :: Timeline.State,
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
-    model :: ModelInfo,
+    model :: T.Text,
     -- | The last stop reason the server sent us.  We only consider completions done once the server
     -- finishes the request response, at which point this is transferred to runState.
     lastStopReason :: Maybe T.Text,
@@ -82,7 +81,7 @@ mkInitialState ::
   Config ->
   BufferedBChan Event ->
   HTTP.Manager ->
-  ModelInfo ->
+  T.Text ->
   [(T.Text, Tools.Tool)] ->
   IO State
 mkInitialState config evchan httpMan model tools =
@@ -340,7 +339,7 @@ startCompletions = do
   st <- get
   let ctx =
         Completions.Context
-          { model = st.model.id,
+          { model = st.model,
             timeline = reverse st.timeline.entries,
             tools = TM.activeTools st.tools
           }

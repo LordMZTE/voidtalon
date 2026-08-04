@@ -5,6 +5,7 @@ module VoidTalon.Config
   ( Config (..),
     TomlURI (..),
     ConnectionConfig (..),
+    ModelConfig (..),
     parseConfig,
     findDefaultPath,
     getHeaders,
@@ -26,7 +27,8 @@ import Toml.Schema
 import Toml.Schema.FromValue (typeError)
 
 data Config = Config
-  { connection :: ConnectionConfig
+  { connection :: ConnectionConfig,
+    model :: ModelConfig
   }
   deriving (Generic)
   deriving (FromValue) via GenericTomlTable Config
@@ -45,6 +47,12 @@ data ConnectionConfig = ConnectionConfig
   }
   deriving (Generic)
   deriving (FromValue) via GenericTomlTable ConnectionConfig
+
+data ModelConfig = ModelConfig
+  { standard :: Maybe T.Text
+  }
+  deriving (Generic)
+  deriving (FromValue) via GenericTomlTable ModelConfig
 
 parseConfig :: T.Text -> Result String Config
 parseConfig = decode
