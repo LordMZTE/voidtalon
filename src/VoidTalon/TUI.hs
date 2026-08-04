@@ -245,6 +245,7 @@ handleEvent ev = do
             Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
             Timeline.stickToBottom
 
+          invalidateCache
           startCompletions
 
       -- Invoke editor with <C-x>
