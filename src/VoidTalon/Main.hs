@@ -3,7 +3,7 @@
 module VoidTalon.Main (main) where
 
 import Brick.Main (customMainWithDefaultVty)
-import Control.Exception (try, throwIO)
+import Control.Exception (throwIO, try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
@@ -14,20 +14,21 @@ import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Graphics.Vty as Vty
 import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as HTTP
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
+import System.Process (shell)
 import Toml.Schema (Result (Failure, Success))
 import qualified VoidTalon.CLI as CLI
 import qualified VoidTalon.Config as Config
+import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.Net.Models as Models
 import qualified VoidTalon.TUI as TUI
 import qualified VoidTalon.Tools as Tools
 import qualified VoidTalon.Tools.ReadFile
 import qualified VoidTalon.Tools.RunCommand
 import qualified VoidTalon.Tools.WriteFile
-import VoidTalon.Util (BufferedBChan(ch), newBufferedBChan)
-import qualified VoidTalon.Net.MCP as MCP
-import System.Process (shell)
+import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
 
 main :: IO ()
 main = do
@@ -42,8 +43,8 @@ main = do
       when (warns /= []) $ hPutStrLn stderr "Warnings while parsing config:"
       mapM_ (hPutStrLn stderr) warns
       pure conf
-  httpMan <- HTTP.newManager HTTP.defaultManagerSettings
-  models <- Models.list config.connection.base_url.inner httpMan
+  httpMan <- HTTP.newManager HTTP.tlsManagerSettings
+  models <- Models.list config.connection httpMan
   model <- case models of
     m : _ -> pure m
     _ -> fail "The server reported an empty list of models!"

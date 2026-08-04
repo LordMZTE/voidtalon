@@ -30,15 +30,15 @@ import Lens.Micro
 import Network.HTTP.Client
   ( BodyReader,
     Manager,
-    Request (method, requestBody),
+    Request (method, requestBody, requestHeaders),
     RequestBody (RequestBodyLBS),
     Response (responseBody),
     requestFromURI,
     withResponse,
   )
-import Network.URI (URI)
 import Network.URI.Lens (uriPathLens)
 import System.FilePath ((</>))
+import VoidTalon.Config (ConnectionConfig (..), TomlURI (..), getHeaders)
 import VoidTalon.JSON (ToJSONEncoding (..), (.:<>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
@@ -51,17 +51,22 @@ perform ::
   (Update -> IO ()) ->
   -- | Action to be executed after everything else finished
   (IO ()) ->
-  -- | API base URL
-  URI ->
+  -- | Connection config
+  ConnectionConfig ->
   -- | HTTP connection Manager
   Manager ->
   -- | Context to send the request with
   Context ->
   IO ThreadId
-perform evchan done uri http ctx = do
-  let endpoint = uri & uriPathLens %~ (</> "chat/completions")
+perform evchan done conf http ctx = do
+  let endpoint = conf.base_url.inner & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
-  let req = req' {method = "POST", requestBody = RequestBodyLBS $ mkCtxRequestBody ctx}
+  let req =
+        req'
+          { method = "POST",
+            requestBody = RequestBodyLBS $ mkCtxRequestBody ctx,
+            requestHeaders = getHeaders conf.headers
+          }
   forkIO $ (withResponse req http handleResponse) `finally` done
   where
     foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder

@@ -33,7 +33,7 @@ import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import Text.Printf (printf)
-import VoidTalon.Config (Config (..), ConnectionConfig (..), TomlURI (..))
+import VoidTalon.Config (Config (..))
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
 import VoidTalon.Net.Models (ModelInfo (id))
@@ -350,7 +350,7 @@ startCompletions = do
       Completions.perform
         (flip Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
         (Util.blockWriteBufferedBChan EvCompletionDone st.evchan)
-        st.config.connection.base_url.inner
+        st.config.connection
         st.httpMan
         ctx
 

@@ -42,12 +42,14 @@ executable vt
       , base
       , brick
       , bytestring
+      , case-insensitive
       , commonmark
       , commonmark-extensions
       , containers
       , directory
       , filepath
       , http-client
+      , http-client-tls
       , http-types
       , microlens
       , microlens-mtl
