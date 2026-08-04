@@ -1,0 +1,33 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  compile:
+    runs-on: docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Packages
+        run: |
+          apt update
+          apt install -y jq # jq needed for git-cliff
+
+      - name: Create Changelog
+        id: changelog
+        uses: actions/git-cliff@v4
+        with:
+          config: ""
+          args: --verbose --latest
+          github_token: "${{ secrets.GH_TOKEN }}"
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Upload
+        uses: actions/forgejo-release@main
+        with:
+          direction: upload
+          token: ${{ env.GITHUB_TOKEN }}
+          release-notes-file: ${{ steps.changelog.outputs.changelog }}
