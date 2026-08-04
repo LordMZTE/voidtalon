@@ -23,6 +23,7 @@ import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
@@ -53,6 +54,9 @@ data State = State
     -- | The model to use.  This will be expanded to be a list later, so the user can select in the
     -- TUI
     model :: ModelInfo,
+    -- | The last stop reason the server sent us.  We only consider completions done once the server
+    -- finishes the request response, at which point this is transferred to runState.
+    lastStopReason :: Maybe T.Text,
     runState :: RunState,
     -- | Tools that the model requested but the user hasn't reviewed yet.
     -- (id, name, invocation)
@@ -64,6 +68,7 @@ makeLensesFor
   [ ("focus", "stateFocusL"),
     ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
+    ("lastStopReason", "stateLastStopReasonL"),
     ("runState", "stateRunStateL"),
     ("pendingTools", "statePendingToolsL"),
     ("tools", "stateToolsL")
@@ -87,6 +92,7 @@ mkInitialState config evchan httpMan model tools =
         focus = focusRing [NPromptField, NTimelineVP, NToolManager],
         promptEditor = editorText NPromptField Nothing "",
         timeline = Timeline.initialState,
+        lastStopReason = Nothing,
         runState = RunStateStopped "stop",
         pendingTools = [],
         tools = TM.newManager tools
@@ -317,7 +323,10 @@ startCompletions = do
         ( flip Util.writeBufferedBChan (st.evchan)
             . EvCompletionUpdate
         )
-        (Util.flushBufferedBChan st.evchan)
+        ( do
+            Util.writeBufferedBChan EvCompletionDone st.evchan
+            Util.flushBufferedBChan st.evchan
+        )
         (st.config).connection.base_url.inner
         (st.httpMan)
         ctx
@@ -333,9 +342,12 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added)) = zoom stateTimelineL 
     (Timeline.OutputEntry prev) : tl -> (Timeline.OutputEntry (prev <> added)) : tl
     tl -> (Timeline.OutputEntry added) : tl
   Timeline.stickToBottom
-handleAppEvent (EvCompletionUpdate (UpdateStop reason)) = do
-  stateRunStateL .= RunStateStopped reason
+handleAppEvent (EvCompletionUpdate (UpdateStop reason)) =
+  stateLastStopReasonL .= Just reason
+handleAppEvent EvCompletionDone = do
   st <- get
+  stateLastStopReasonL .= Nothing
+  stateRunStateL .= RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason)
   case st.timeline.entries of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
       let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
