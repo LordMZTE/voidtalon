@@ -16,6 +16,7 @@ module VoidTalon.TUI.Types
     toolManagerSchemaKeyA,
     bakedWidget,
     overlaySizeLimitPercent,
+    PopupContext (..),
   )
 where
 
@@ -29,6 +30,7 @@ import VoidTalon.Util (SemiSemigroup ((<>?)))
 data Event
   = EvCompletionUpdate Update
   | EvCompletionDone
+  | EvClosePopup
 
 instance SemiSemigroup Event where
   EvCompletionUpdate (UpdateMessage ma sa) <>? EvCompletionUpdate (UpdateMessage mb sb) =
@@ -100,6 +102,11 @@ toolManagerSchemaKeyA = attrName "toolManagerSchemaKey"
 bakedWidget :: Result a -> Widget a
 bakedWidget = Widget Fixed Fixed . pure
 
--- | The limit of the available size in percent that should be used for overlays, if appropriate.
+-- | The limit of the available size in percent that ,should be used for overlays, if appropriate.
 overlaySizeLimitPercent :: Int
 overlaySizeLimitPercent = 75
+
+data PopupContext = PopupContext
+  { -- | When performed, the current popup is closed.
+    close :: IO ()
+  }

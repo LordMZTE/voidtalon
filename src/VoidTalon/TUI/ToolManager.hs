@@ -14,6 +14,7 @@ where
 
 import Brick
 import Brick.Widgets.Border (vBorder)
+import Control.Monad.IO.Class (liftIO)
 import qualified Data.Aeson as J
 import qualified Data.Aeson.Key as AK
 import qualified Data.Aeson.KeyMap as AK
@@ -27,7 +28,14 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema (..), SchemaType)
-import VoidTalon.TUI.Types (Name (NToolManagerEntry, NToolManagerVP), toolManagerSchemaKeyA, toolManagerSchemaTypeA, toolManagerSelectedA, toolManagerToolTitleA)
+import VoidTalon.TUI.Types
+  ( Name (NToolManagerEntry, NToolManagerVP),
+    PopupContext (..),
+    toolManagerSchemaKeyA,
+    toolManagerSchemaTypeA,
+    toolManagerSelectedA,
+    toolManagerToolTitleA,
+  )
 import qualified VoidTalon.Tools as Tools
 
 -- | Current state of a registered tool.
@@ -65,25 +73,27 @@ findTool :: Manager -> T.Text -> Maybe Tools.Tool
 findTool Manager {states} name =
   (\(_, _, t) -> t) <$> find (\(enabled, n, _) -> enabled && n == name) states
 
-handleEvent :: BrickEvent Name e -> EventM Name Manager ()
-handleEvent (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
+handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Manager ()
+handleEvent _ (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   m <- get
   let sel = case m.selected + 1 of
         n | n >= length m.states -> 0
         n -> n
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
-handleEvent (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
+handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
   let sel = case m.selected - 1 of
         n | n < 0 -> length m.states - 1
         n -> n
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
-handleEvent (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
+handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
   sel <- gets (.selected)
   managerStatesL . ix sel . _1 %= not
-handleEvent _ = pure ()
+handleEvent PopupContext {close} (VtyEvent (V.EvKey V.KEsc [])) =
+  liftIO $ close
+handleEvent _ _ = pure ()
 
 draw :: Manager -> Widget Name
 draw Manager {states, selected} = hBox [list, vBorder, schemaView]

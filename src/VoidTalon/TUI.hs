@@ -23,7 +23,7 @@ import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
@@ -62,6 +62,7 @@ data State = State
     -- | Tools that the model requested but the user hasn't reviewed yet.
     -- (id, name, invocation)
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
+    openPopup :: Maybe Name,
     tools :: TM.Manager
   }
 
@@ -73,6 +74,7 @@ makeLensesFor
     ("runState", "stateRunStateL"),
     ("stats", "stateStatsL"),
     ("pendingTools", "statePendingToolsL"),
+    ("openPopup", "stateOpenPopupL"),
     ("tools", "stateToolsL")
   ]
   ''State
@@ -91,13 +93,14 @@ mkInitialState config evchan httpMan model tools =
         evchan,
         httpMan,
         model,
-        focus = focusRing [NPromptField, NTimelineVP, NToolManager],
+        focus = focusRing [NPromptField, NTimelineVP],
         promptEditor = editorText NPromptField Nothing "",
         timeline = Timeline.initialState,
         lastStopReason = Nothing,
         runState = RunStateStopped "stop",
         stats = Completions.emptyStats,
         pendingTools = [],
+        openPopup = Nothing,
         tools = TM.newManager tools
       }
 
@@ -132,7 +135,10 @@ app =
     }
 
 effectiveFocus :: State -> Maybe Name
-effectiveFocus st = if null st.pendingTools then focusGetCurrent st.focus else Just NToolDialog
+effectiveFocus st =
+  (listToMaybe st.pendingTools >> Just NToolDialog)
+    <|> st.openPopup
+    <|> (focusGetCurrent st.focus)
 
 draw :: State -> [Widget Name]
 draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
@@ -152,7 +158,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
                   : boxWidgets
         _ -> []
         -- intentionally not @effectiveFocus@ to render overlays even when they're not focused.
-        ++ case focusGetCurrent st.focus of
+        ++ case st.openPopup of
           Just NToolManager ->
             pure
               . centerLayer
@@ -188,7 +194,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
               ]
     statusBarLeft = txt $ globalHelp <> localHelp
 
-    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel"
+    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel | <C-t> Tool Manager"
     localHelp =
       case effectiveFocus st of
         Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
@@ -224,6 +230,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
     RunStateRunning thread -> do
       liftIO $ killThread thread
       stateRunStateL .= RunStateStopped "cancelled"
+handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManager
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
@@ -302,7 +309,9 @@ handleEvent ev = do
           startCompletions
         invalidateCache
       _ -> pure ()
-    Just NToolManager -> zoom stateToolsL $ TM.handleEvent ev
+    Just NToolManager ->
+      let ctx = PopupContext {close = Util.blockWriteBufferedBChan EvClosePopup st.evchan}
+       in zoom stateToolsL $ TM.handleEvent ctx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -413,3 +422,8 @@ handleAppEvent EvCompletionDone = do
           Left err -> Left (id', err)
           Right res -> Right (id', name, res)
         Nothing -> Left (id', "No such tool exists")
+handleAppEvent EvClosePopup =
+  stateOpenPopupL .= Nothing
+
+openPopup :: Name -> EventM n State ()
+openPopup n = stateOpenPopupL %= (<|> Just n)
