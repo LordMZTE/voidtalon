@@ -36,6 +36,7 @@ import Text.Printf (printf)
 import VoidTalon.Config (Config (..))
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
+import qualified VoidTalon.TUI.Help as Help
 import qualified VoidTalon.TUI.Timeline as Timeline
 import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
@@ -159,13 +160,8 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         _ -> []
         -- intentionally not @effectiveFocus@ to render overlays even when they're not focused.
         ++ case st.openPopup of
-          Just NToolManager ->
-            pure
-              . centerLayer
-              . hLimitPercent overlaySizeLimitPercent
-              . vLimitPercent overlaySizeLimitPercent
-              . borderWithLabel (txt "Manage Tools")
-              $ TM.draw st.tools
+          Just NToolManager -> pure . showPopup "Manage Tools" $ TM.draw st.tools
+          Just NHelp -> pure . showPopup "Help" $ Help.draw
           _ -> []
     output =
       Timeline.draw
@@ -176,7 +172,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         st.focus
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
-    statusBar = withAttr barA $ statusBarLeft <+> padLeft Max statusBarRight
+    statusBar = withAttr barA $ padLeft Max statusBarRight
     statusBarRight =
       txt $
         let run = case st.runState of
@@ -192,16 +188,12 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
                 "/s ",
                 run
               ]
-    statusBarLeft = txt $ globalHelp <> localHelp
-
-    globalHelp = "<C-q> Quit | <C-w> Focus | <C-e/y> Scl | <C-c> Cancel | <C-t> Tool Manager"
-    localHelp =
-      case effectiveFocus st of
-        Just NPromptField -> " | <M-Cr> Ins. NL | <C-x> Editor"
-        Just NTimelineVP -> " | k/j Move | d Delete | e Edit | <CR> Regen"
-        Just NToolDialog -> " | y Confirm | n Deny | s Spoof"
-        Just NToolManager -> TM.helpText
-        _ -> ""
+    showPopup name widget =
+      centerLayer
+        . hLimitPercent overlaySizeLimitPercent
+        . vLimitPercent overlaySizeLimitPercent
+        . borderWithLabel (txt name)
+        $ widget
 
 handleEvent :: BrickEvent Name [Event] -> EventM Name State ()
 -- Exit with <C-q>
@@ -230,10 +222,12 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
     RunStateRunning thread -> do
       liftIO $ killThread thread
       stateRunStateL .= RunStateStopped "cancelled"
+handleEvent (VtyEvent (V.EvKey (V.KFun 1) [])) = openPopup NHelp
 handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManager
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
+  let popupCtx = PopupContext {close = Util.blockWriteBufferedBChan EvClosePopup st.evchan}
   case effectiveFocus st of
     Just NPromptField -> case ev of
       -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
@@ -309,9 +303,8 @@ handleEvent ev = do
           startCompletions
         invalidateCache
       _ -> pure ()
-    Just NToolManager ->
-      let ctx = PopupContext {close = Util.blockWriteBufferedBChan EvClosePopup st.evchan}
-       in zoom stateToolsL $ TM.handleEvent ctx ev
+    Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
+    Just NHelp -> Help.handleEvent popupCtx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->

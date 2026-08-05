@@ -8,7 +8,6 @@ module VoidTalon.TUI.ToolManager
     findTool,
     handleEvent,
     draw,
-    helpText,
   )
 where
 
@@ -91,8 +90,7 @@ handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
 handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
   sel <- gets (.selected)
   managerStatesL . ix sel . _1 %= not
-handleEvent PopupContext {close} (VtyEvent (V.EvKey V.KEsc [])) =
-  liftIO $ close
+handleEvent PopupContext {close} (VtyEvent (V.EvKey V.KEsc [])) = liftIO close
 handleEvent _ _ = pure ()
 
 draw :: Manager -> Widget Name
@@ -155,6 +153,3 @@ drawState selected (enabled, name, Tools.Tool {description = Tools.Description {
       ]
   where
     check = if enabled then "● " else "○ "
-
-helpText :: T.Text
-helpText = " | k/j Move | <Space> Toggle"

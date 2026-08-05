@@ -45,6 +45,7 @@ data Name
   | NToolManager
   | NToolManagerVP
   | NToolManagerEntry Int
+  | NHelp
   deriving (Eq, Ord, Show)
 
 data RunState
