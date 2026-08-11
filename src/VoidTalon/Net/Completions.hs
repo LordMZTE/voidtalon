@@ -67,7 +67,6 @@ perform evchan done conf http ctx = do
             requestBody = RequestBodyLBS $ mkCtxRequestBody ctx,
             requestHeaders = getHeaders conf.headers
           }
-  LBS.putStrLn $ mkCtxRequestBody ctx
   forkIO $ (withResponse req http handleResponse) `finally` done
   where
     foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder
