@@ -22,7 +22,6 @@ import Toml.Schema (Result (Failure, Success))
 import qualified VoidTalon.CLI as CLI
 import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Net.MCP as MCP
-import qualified VoidTalon.Net.Models as Models
 import qualified VoidTalon.TUI as TUI
 import qualified VoidTalon.Tools as Tools
 import qualified VoidTalon.Tools.ReadFile
@@ -44,16 +43,15 @@ main = do
       mapM_ (hPutStrLn stderr) warns
       pure conf
   httpMan <- HTTP.newManager HTTP.tlsManagerSettings
-  model <- case config.model.standard of
-    Just m -> pure m
-    Nothing -> do
-      models <- Models.list config.connection httpMan
-      case models of
-        m : _ -> pure m.id
-        _ -> fail "The server reported an empty list of models!"
   mcps <- startStdioMCPServers args.mcp
   chan <- newBufferedBChan
-  initState <- TUI.mkInitialState config chan httpMan model (builtinTools ++ concatMap snd mcps)
+  initState <-
+    TUI.mkInitialState
+      config
+      chan
+      httpMan
+      config.model.standard
+      (builtinTools ++ concatMap snd mcps)
   (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty
   sequence_ (MCP.closeConnection . fst <$> mcps)

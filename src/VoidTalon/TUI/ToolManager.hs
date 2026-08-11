@@ -13,6 +13,7 @@ where
 
 import Brick
 import Brick.Widgets.Border (vBorder)
+import Brick.Widgets.List (listSelectedAttr)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Aeson as J
 import qualified Data.Aeson.Key as AK
@@ -28,14 +29,16 @@ import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema (..), SchemaType)
 import VoidTalon.TUI.Types
-  ( Name (NToolManagerEntry, NToolManagerVP),
+  ( Event (EvClosePopup),
+    Name (NToolManagerEntry, NToolManagerVP),
     PopupContext (..),
     toolManagerSchemaKeyA,
     toolManagerSchemaTypeA,
-    toolManagerSelectedA,
     toolManagerToolTitleA,
   )
 import qualified VoidTalon.Tools as Tools
+import VoidTalon.Util (focusAdd, focusSub)
+import qualified VoidTalon.Util as Util
 
 -- | Current state of a registered tool.
 -- (enabled, name, tool)
@@ -75,22 +78,19 @@ findTool Manager {states} name =
 handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Manager ()
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   m <- get
-  let sel = case m.selected + 1 of
-        n | n >= length m.states -> 0
-        n -> n
+  let sel = focusAdd (length m.states) m.selected
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
-  let sel = case m.selected - 1 of
-        n | n < 0 -> length m.states - 1
-        n -> n
+  let sel = focusSub m.selected (length m.states)
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
 handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
   sel <- gets (.selected)
   managerStatesL . ix sel . _1 %= not
-handleEvent PopupContext {close} (VtyEvent (V.EvKey V.KEsc [])) = liftIO close
+handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
+  liftIO $ Util.blockWriteBufferedBChan EvClosePopup evchan
 handleEvent _ _ = pure ()
 
 draw :: Manager -> Widget Name
@@ -146,7 +146,7 @@ draw Manager {states, selected} = hBox [list, vBorder, schemaView]
 
 drawState :: Bool -> ToolState -> Widget n
 drawState selected (enabled, name, Tools.Tool {description = Tools.Description {description}}) =
-  applyWhen selected (withDefAttr toolManagerSelectedA) $
+  applyWhen selected (withDefAttr listSelectedAttr) $
     vBox
       [ withAttr toolManagerToolTitleA $ txt (check <> name),
         txtWrap description

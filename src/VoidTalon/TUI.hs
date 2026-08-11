@@ -15,6 +15,7 @@ import Brick.Focus
 import Brick.Widgets.Border
 import Brick.Widgets.Center (centerLayer)
 import Brick.Widgets.Edit
+import Brick.Widgets.List (listSelectedAttr)
 import Control.Applicative ((<|>))
 import Control.Concurrent (killThread)
 import Control.Exception (try)
@@ -37,6 +38,7 @@ import VoidTalon.Config (Config (..))
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
 import qualified VoidTalon.TUI.Help as Help
+import qualified VoidTalon.TUI.ModelSelector as MS
 import qualified VoidTalon.TUI.Timeline as Timeline
 import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
@@ -52,9 +54,7 @@ data State = State
     promptEditor :: Editor T.Text Name,
     httpMan :: HTTP.Manager,
     timeline :: Timeline.State,
-    -- | The model to use.  This will be expanded to be a list later, so the user can select in the
-    -- TUI
-    model :: T.Text,
+    models :: MS.Selector,
     -- | The last stop reason the server sent us.  We only consider completions done once the server
     -- finishes the request response, at which point this is transferred to runState.
     lastStopReason :: Maybe T.Text,
@@ -71,6 +71,7 @@ makeLensesFor
   [ ("focus", "stateFocusL"),
     ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
+    ("models", "stateModelsL"),
     ("lastStopReason", "stateLastStopReasonL"),
     ("runState", "stateRunStateL"),
     ("stats", "stateStatsL"),
@@ -84,7 +85,7 @@ mkInitialState ::
   Config ->
   BufferedBChan Event ->
   HTTP.Manager ->
-  T.Text ->
+  Maybe T.Text ->
   [(T.Text, Tools.Tool)] ->
   IO State
 mkInitialState config evchan httpMan model tools =
@@ -93,7 +94,7 @@ mkInitialState config evchan httpMan model tools =
       { config,
         evchan,
         httpMan,
-        model,
+        models = MS.newSelector model,
         focus = focusRing [NPromptField, NTimelineVP],
         promptEditor = editorText NPromptField Nothing "",
         timeline = Timeline.initialState,
@@ -118,14 +119,14 @@ app =
         const $
           attrMap
             V.defAttr
-            [ (warningA, fg V.yellow),
+            [ (listSelectedAttr, (bg (V.Color240 $ 240 - 16))),
+              (warningA, fg V.yellow),
               (barA, V.magenta `on` (V.Color240 $ 235 - 16)),
               (selectedA, fg V.blue),
               (toolTitleA, (fg V.red) {V.attrStyle = V.SetTo V.bold}),
               (toolResultBorderA, fg V.red),
               (toolPlanHeaderA, (fg V.magenta) {V.attrStyle = V.SetTo V.bold}),
               (toolManagerToolTitleA, (fg V.cyan) {V.attrStyle = V.SetTo V.bold}),
-              (toolManagerSelectedA, (bg (V.Color240 $ 240 - 16))),
               ( toolManagerSchemaTypeA,
                 (V.red `on` (V.Color240 $ 235 - 16))
                   { V.attrStyle = V.SetTo V.bold
@@ -162,6 +163,8 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         ++ case st.openPopup of
           Just NToolManager -> pure . showPopup "Manage Tools" $ TM.draw st.tools
           Just NHelp -> pure . showPopup "Help" $ Help.draw
+          Just NModelSelector -> pure . showPopup "Models" $ MS.draw st.models
+          Just _ -> undefined -- invalid state
           _ -> []
     output =
       Timeline.draw
@@ -172,7 +175,8 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         st.focus
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
-    statusBar = withAttr barA $ padLeft Max statusBarRight
+    statusBar = withAttr barA (statusBarLeft <+> padLeft Max statusBarRight)
+    statusBarLeft = txt $ fromMaybe "<no model>" st.models.active
     statusBarRight =
       txt $
         let run = case st.runState of
@@ -224,10 +228,14 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
       stateRunStateL .= RunStateStopped "cancelled"
 handleEvent (VtyEvent (V.EvKey (V.KFun 1) [])) = openPopup NHelp
 handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManager
+handleEvent (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
+  st <- get
+  openPopup NModelSelector
+  zoom stateModelsL $ MS.onOpened st.config.connection st.httpMan st.evchan
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
-  let popupCtx = PopupContext {close = Util.blockWriteBufferedBChan EvClosePopup st.evchan}
+  let popupCtx = PopupContext {config = st.config, httpMan = st.httpMan, evchan = st.evchan}
   case effectiveFocus st of
     Just NPromptField -> case ev of
       -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
@@ -235,19 +243,20 @@ handleEvent ev = do
       (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
         statePromptEditorL %= applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) -> do
-        let running = isRunning st.runState
         let prompt = T.intercalate "\n" $ getEditContents $ st.promptEditor
-        unless (running || T.null prompt) $ do
-          -- clear entry
-          statePromptEditorL %= applyEdit clearZipper
-
+        unless (T.null prompt) $ do
           -- append prompt to timeline
           zoom stateTimelineL $ do
             Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
             Timeline.stickToBottom
 
           invalidateCache
+
           startCompletions
+            >>= ( flip when $ do
+                    -- clear entry
+                    statePromptEditorL %= applyEdit clearZipper
+                )
 
       -- Invoke editor with <C-x>
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
@@ -259,16 +268,12 @@ handleEvent ev = do
       _ -> zoom statePromptEditorL $ handleEditorEvent ev
     Just NTimelineVP -> case ev of
       (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
-        let new = case st.timeline.focus + 1 of
-              n | n >= length st.timeline.entries -> 0
-              n -> n
+        let new = Util.focusAdd (length st.timeline.entries) st.timeline.focus
         stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
         invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
-        let new = case st.timeline.focus - 1 of
-              n | n < 0 -> subtract 1 $ length st.timeline.entries
-              n -> n
+        let new = Util.focusSub (length st.timeline.entries) st.timeline.focus
         stateTimelineL . Timeline.stateFocusL .= new
         makeVisible $ NTimelineEntry new
         invalidateCache
@@ -300,11 +305,13 @@ handleEvent ev = do
         -- If the rest the timeline is completely empty, we have nothing to work with.
         unless (null tl) $ do
           stateTimelineL . Timeline.stateEntriesL .= tl
-          startCompletions
+          _ <- startCompletions
+          pure ()
         invalidateCache
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
     Just NHelp -> Help.handleEvent popupCtx ev
+    Just NModelSelector -> zoom stateModelsL $ MS.handleEvent popupCtx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -318,7 +325,7 @@ handleEvent ev = do
               Timeline.stickToBottom
             invalidateCache
             statePendingToolsL .= rest
-            when (null rest && isStopped st.runState) startCompletions
+            when (null rest) $ startCompletions >> pure ()
        in case (st.pendingTools, ev) of
             ((id', _, (_, invoke)) : rest, VtyEvent (V.EvKey (V.KChar 'y') [])) -> do
               result <-
@@ -336,28 +343,32 @@ handleEvent ev = do
     _ -> pure ()
 
 -- | Starts generation using the current timeline.
--- Caller asserts that completions aren't already running.
-startCompletions :: EventM n State ()
+-- Returns True iff completions could be started
+startCompletions :: EventM n State Bool
 startCompletions = do
   st <- get
-  let ctx =
-        Completions.Context
-          { model = st.model,
-            timeline = reverse st.timeline.entries,
-            tools = TM.activeTools st.tools
-          }
-  -- start completions request
-  thread <-
-    liftIO $
-      Completions.perform
-        (flip Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
-        (Util.blockWriteBufferedBChan EvCompletionDone st.evchan)
-        st.config.connection
-        st.httpMan
-        ctx
+  case st.models.active of
+    Just m | (isStopped st.runState) -> do
+      let ctx =
+            Completions.Context
+              { model = m,
+                timeline = reverse st.timeline.entries,
+                tools = TM.activeTools st.tools
+              }
+      -- start completions request
+      thread <-
+        liftIO $
+          Completions.perform
+            (flip Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
+            (Util.blockWriteBufferedBChan EvCompletionDone st.evchan)
+            st.config.connection
+            st.httpMan
+            ctx
 
-  -- set runStatus to running
-  stateRunStateL .= RunStateRunning thread
+      -- set runStatus to running
+      stateRunStateL .= RunStateRunning thread
+      pure True
+    _ -> pure False
 
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
@@ -417,6 +428,7 @@ handleAppEvent EvCompletionDone = do
         Nothing -> Left (id', "No such tool exists")
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing
+handleAppEvent (EvModelList ms) = zoom stateModelsL $ MS.modelsReceived ms
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)

@@ -11,7 +11,6 @@ module VoidTalon.TUI.Types
     toolResultBorderA,
     toolPlanHeaderA,
     toolManagerToolTitleA,
-    toolManagerSelectedA,
     toolManagerSchemaTypeA,
     toolManagerSchemaKeyA,
     bakedWidget,
@@ -24,13 +23,17 @@ import Brick (AttrName, Result, Size (Fixed), attrName)
 import Brick.Types (Widget (Widget))
 import Control.Concurrent (ThreadId)
 import qualified Data.Text as T
+import qualified Network.HTTP.Client as HTTP
+import VoidTalon.Config (Config)
 import VoidTalon.Net.Completions (Update (UpdateMessage))
-import VoidTalon.Util (SemiSemigroup ((<>?)))
+import VoidTalon.Net.Models (ModelInfo)
+import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
 data Event
   = EvCompletionUpdate Update
   | EvCompletionDone
   | EvClosePopup
+  | EvModelList [ModelInfo]
 
 instance SemiSemigroup Event where
   EvCompletionUpdate (UpdateMessage ma sa) <>? EvCompletionUpdate (UpdateMessage mb sb) =
@@ -46,6 +49,7 @@ data Name
   | NToolManagerVP
   | NToolManagerEntry Int
   | NHelp
+  | NModelSelector
   deriving (Eq, Ord, Show)
 
 data RunState
@@ -87,10 +91,6 @@ toolPlanHeaderA = attrName "toolPlanHeader"
 toolManagerToolTitleA :: AttrName
 toolManagerToolTitleA = attrName "toolManagerToolTitle"
 
--- | Attribute name for a selected tool entry in the tool manager
-toolManagerSelectedA :: AttrName
-toolManagerSelectedA = attrName "toolManagerSelected"
-
 -- | Attribute name used for the types shown in the tool manager's schema preview.
 toolManagerSchemaTypeA :: AttrName
 toolManagerSchemaTypeA = attrName "toolManagerSchemaType"
@@ -108,6 +108,7 @@ overlaySizeLimitPercent :: Int
 overlaySizeLimitPercent = 75
 
 data PopupContext = PopupContext
-  { -- | When performed, the current popup is closed.
-    close :: IO ()
+  { config :: Config,
+    httpMan :: HTTP.Manager,
+    evchan :: BufferedBChan Event
   }

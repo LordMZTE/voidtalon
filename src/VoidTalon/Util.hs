@@ -11,6 +11,8 @@ module VoidTalon.Util
     writeBufferedBChan,
     flushBufferedBChan,
     blockWriteBufferedBChan,
+    focusAdd,
+    focusSub,
   )
 where
 
@@ -100,3 +102,25 @@ flushBufferedBChan (BufferedBChan ch mbuf) = modifyMVar_ mbuf $ (>> pure []) . w
 blockWriteBufferedBChan :: (SemiSemigroup e) => e -> BufferedBChan e -> IO ()
 blockWriteBufferedBChan ev (BufferedBChan ch mbuf) =
   modifyMVar_ mbuf $ (>> pure []) . writeBChan ch . pushBufferedBChan ev
+
+-- | Rotates focus by adding one.
+focusAdd ::
+  -- | Total number of elements
+  Int ->
+  -- | Currently focused index
+  Int ->
+  Int
+focusAdd tot sel = case sel + 1 of
+  n | n >= tot -> 0
+  n -> n
+
+-- | Rotates focus by subtracting one.
+focusSub ::
+  -- | Total number of elements
+  Int ->
+  -- | Currently focused index
+  Int ->
+  Int
+focusSub tot sel = case sel - 1 of
+  n | n < 0 -> tot - 1
+  n -> n

@@ -1,7 +1,9 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Net.Models (ModelInfo (..), list) where
+module VoidTalon.Net.Models (ModelInfo (..), Pricing (..), list) where
 
+import Control.Monad (join)
 import Data.Aeson
 import Data.Text as T
 import Lens.Micro
@@ -17,17 +19,41 @@ import System.FilePath ((</>))
 import VoidTalon.Config (ConnectionConfig (..), TomlURI (..), getHeaders)
 import VoidTalon.Net (checkStatusOK)
 
+-- | Information about what model usage costs.  The API sends the prices as strings.
+data Pricing = Pricing
+  { prompt :: T.Text,
+    completion :: T.Text
+  }
+
+instance FromJSON Pricing where
+  parseJSON (Object v) =
+    Pricing
+      <$> (v .: "prompt")
+      <*> (v .: "completion")
+  parseJSON _ = mempty
+
+-- | Information about a model as returned by the /models endpoint.
+-- OpenAI only specifies the id, name, and owned_by fields, the rest are extensions commonly found
+-- in the wild and on OpenRouter.
 data ModelInfo = ModelInfo
   { id :: T.Text,
-    -- | Unix Timestamp
-    created :: Int
+    name :: Maybe T.Text,
+    description :: Maybe T.Text,
+    contextLength :: Maybe Int,
+    pricing :: Maybe Pricing,
+    -- | stored in JSON as reasoning.supported_efforts, where both of those fields are optional
+    supportedReasoningEfforts :: Maybe [T.Text]
   }
 
 instance FromJSON ModelInfo where
   parseJSON (Object v) =
     ModelInfo
       <$> (v .: "id")
-      <*> (v .: "created")
+      <*> (v .:? "name")
+      <*> (v .:? "description")
+      <*> (v .:? "context_length")
+      <*> (v .:? "pricing")
+      <*> (v .:? "reasoning" >>= (fmap join . mapM (.:? "supported_efforts")))
   parseJSON _ = mempty
 
 newtype ListResponse = ListResponse [ModelInfo]

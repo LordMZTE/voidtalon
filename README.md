@@ -34,10 +34,13 @@ want to work and then run `vt`. There is no noticable delay in startup.
 - [x] Tool calling
     - [x] MCP over stdio (HTTP is coming soon)
     - [x] A small, no-nonsense collection of built-in tools (see below)
+    - [x] Toggling of individual tools, schema and description viewer
+    - [x] User confirmation dialog for all tool calls
+    - [x] Manually spoofing tool responses
+- [x] Interactive model selection for all available models offered by the provider
 - [x] Interactive editing of messages
-- [x] Completions via an OpenAI-compatible API, tested with llama.cpp
+- [x] Completions via an OpenAI-compatible API, tested with llama.cpp and OpenRouter
 - [x] Reporting of token count and TPS (the latter is only supported on llama.cpp)
-- [x] User confirmation dialog for all tool calls
 - [x] Fancy TUI markdown rendering and syntax highlighting for code blocks
 - [x] Managing tools, each tool can be individiually enabled and disabled, schema and description
       are shown
