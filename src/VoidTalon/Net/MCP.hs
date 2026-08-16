@@ -34,6 +34,7 @@ import System.Process
     terminateProcess,
   )
 import VoidTalon.JSON (ParseEither (PLeft, PRight), ToJSONEncoding (toEncoding))
+import qualified VoidTalon.Log as Log
 import VoidTalon.Net.MCP.Types
 import qualified VoidTalon.Tools as Tools
 
@@ -71,6 +72,7 @@ closeConnection Connection {transport} = case transport of
 -- std_in, std_out, and std_err fields of given @CreateProcess@ are overwritten.
 spawnStdio :: CreateProcess -> IO Connection
 spawnStdio spec = do
+  Log.info $ "Starting stdio MCP server with spec: " <> show spec
   let spec' = spec {std_in = CreatePipe, std_out = CreatePipe, std_err = Inherit}
   (Just stdin, Just stdout, Nothing, processHandle) <- createProcess spec'
   nextId <- newMVar 0
@@ -118,10 +120,15 @@ performInitialization con = do
         ) ->
         pure $ Left InitFailureNoTools
     Right _ -> do
-      LBS8.hPutStrLn con.transport.stdin . encodingToLazyByteString . toEncoding
-        $ JSONRPCMessage {params=emptyObject_, method=methodNotifInitialized, id=Nothing}
-      bimap InitFailureRPC (liftA2 (,) (.name) (makeToolForSpec con) <$>)
-        <$> listTools con Nothing
+      LBS8.hPutStrLn con.transport.stdin . encodingToLazyByteString . toEncoding $
+        JSONRPCMessage {params = emptyObject_, method = methodNotifInitialized, id = Nothing}
+      res <-
+        bimap InitFailureRPC (liftA2 (,) (.name) (makeToolForSpec con) <$>)
+          <$> listTools con Nothing
+      case res of
+        Left e -> Log.err $ "MCP server initialization failed with: " <> show e
+        Right l -> Log.info $ mconcat ["MCP server initialized with ", show $ length l, " tools"]
+      pure res
 
 listTools :: Connection -> Maybe Value -> IO (Either RPCFailure [ToolSpec])
 listTools con page = do

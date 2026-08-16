@@ -3,7 +3,7 @@
 module VoidTalon.Main (main) where
 
 import Brick.Main (customMainWithDefaultVty)
-import Control.Exception (throwIO, try)
+import Control.Exception (bracket, throwIO, try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
@@ -21,6 +21,7 @@ import System.Process (shell)
 import Toml.Schema (Result (Failure, Success))
 import qualified VoidTalon.CLI as CLI
 import qualified VoidTalon.Config as Config
+import qualified VoidTalon.Log as Log
 import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.TUI as TUI
 import qualified VoidTalon.Tools as Tools
@@ -30,7 +31,14 @@ import qualified VoidTalon.Tools.WriteFile
 import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
 
 main :: IO ()
-main = do
+main =
+  bracket
+    Log.init
+    (const Log.deinit)
+    (const mainWithLog)
+
+mainWithLog :: IO ()
+mainWithLog = do
   args <- CLI.readArguments
   config_content <- fromMaybe Config.findDefaultPath (pure <$> args.config) >>= readConfig
   config <- case Config.parseConfig config_content of

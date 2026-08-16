@@ -17,7 +17,7 @@ import Brick.Widgets.Center (centerLayer)
 import Brick.Widgets.Edit
 import Brick.Widgets.List (listSelectedAttr)
 import Control.Applicative ((<|>))
-import Control.Concurrent (killThread)
+import Control.Concurrent (forkFinally, killThread)
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
@@ -35,6 +35,7 @@ import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import Text.Printf (printf)
 import VoidTalon.Config (Config (..))
+import qualified VoidTalon.Log as Log
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
 import qualified VoidTalon.TUI.Help as Help
@@ -64,7 +65,8 @@ data State = State
     -- (id, name, invocation)
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
     openPopup :: Maybe Name,
-    tools :: TM.Manager
+    tools :: TM.Manager,
+    currentError :: Maybe String
   }
 
 makeLensesFor
@@ -77,7 +79,8 @@ makeLensesFor
     ("stats", "stateStatsL"),
     ("pendingTools", "statePendingToolsL"),
     ("openPopup", "stateOpenPopupL"),
-    ("tools", "stateToolsL")
+    ("tools", "stateToolsL"),
+    ("currentError", "stateCurrentErrorL")
   ]
   ''State
 
@@ -103,7 +106,8 @@ mkInitialState config evchan httpMan model tools =
         stats = Completions.emptyStats,
         pendingTools = [],
         openPopup = Nothing,
-        tools = TM.newManager tools
+        tools = TM.newManager tools,
+        currentError = Nothing
       }
 
 type App' = App State [Event] Name
@@ -121,6 +125,7 @@ app =
             V.defAttr
             [ (listSelectedAttr, (bg (V.Color240 $ 240 - 16))),
               (warningA, fg V.yellow),
+              (errorA, fg V.red),
               (barA, V.magenta `on` (V.Color240 $ 235 - 16)),
               (selectedA, fg V.blue),
               (toolTitleA, (fg V.red) {V.attrStyle = V.SetTo V.bold}),
@@ -138,7 +143,8 @@ app =
 
 effectiveFocus :: State -> Maybe Name
 effectiveFocus st =
-  (listToMaybe st.pendingTools >> Just NToolDialog)
+  (const NErrorPopup <$> st.currentError)
+    <|> (listToMaybe st.pendingTools >> Just NToolDialog)
     <|> st.openPopup
     <|> (focusGetCurrent st.focus)
 
@@ -146,19 +152,27 @@ draw :: State -> [Widget Name]
 draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
   where
     overlays =
-      case st.pendingTools of
-        (_, name, (plan, _)) : _ ->
-          let entry hdr t = [withAttr toolPlanHeaderA $ txtWrap hdr, border $ txtWrap t]
-              boxWidgets = concatMap (uncurry entry) plan
-           in pure
-                . centerLayer
-                . hLimitPercent overlaySizeLimitPercent
-                . borderWithLabel (txt "Tool Call Request")
-                . vBox
-                $ (withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name)
-                  : (txt T.empty) -- empty line for spacing
-                  : boxWidgets
-        _ -> []
+      case st.currentError of
+        Just e ->
+          pure
+            . centerLayer
+            . hLimitPercent overlaySizeLimitPercent
+            . borderWithLabel (txt "ERROR")
+            $ strWrap e
+        Nothing -> []
+        ++ case st.pendingTools of
+          (_, name, (plan, _)) : _ ->
+            let entry hdr t = [withAttr toolPlanHeaderA $ txtWrap hdr, border $ txtWrap t]
+                boxWidgets = concatMap (uncurry entry) plan
+             in pure
+                  . centerLayer
+                  . hLimitPercent overlaySizeLimitPercent
+                  . borderWithLabel (txt "Tool Call Request")
+                  . vBox
+                  $ (withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name)
+                    : (txt T.empty) -- empty line for spacing
+                    : boxWidgets
+          _ -> []
         -- intentionally not @effectiveFocus@ to render overlays even when they're not focused.
         ++ case st.openPopup of
           Just NToolManager -> pure . showPopup "Manage Tools" $ TM.draw st.tools
@@ -237,6 +251,9 @@ handleEvent ev = do
   st <- get
   let popupCtx = PopupContext {config = st.config, httpMan = st.httpMan, evchan = st.evchan}
   case effectiveFocus st of
+    Just NErrorPopup -> case ev of
+      (VtyEvent (V.EvKey V.KEsc [])) -> stateCurrentErrorL .= Nothing
+      _ -> pure ()
     Just NPromptField -> case ev of
       -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
       -- supported by vty.
@@ -356,12 +373,19 @@ startCompletions = do
       -- start completions request
       thread <-
         liftIO $
-          Completions.perform
-            (flip Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
-            (Util.blockWriteBufferedBChan EvCompletionDone st.evchan)
-            st.config.connection
-            st.httpMan
-            ctx
+          forkFinally
+            ( Completions.perform
+                (Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
+                st.config.connection
+                st.httpMan
+                ctx
+            )
+            ( \res -> do
+                case res of
+                  Left e -> Util.writeBufferedBChan st.evchan $ EvError $ show e
+                  Right () -> pure ()
+                Util.blockWriteBufferedBChan st.evchan EvCompletionDone
+            )
 
       -- set runStatus to running
       stateRunStateL .= RunStateRunning thread
@@ -426,6 +450,9 @@ handleAppEvent EvCompletionDone = do
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing
 handleAppEvent (EvModelList ms) = zoom stateModelsL $ MS.modelsReceived ms
+handleAppEvent (EvError e) = do
+  stateCurrentErrorL .= Just e
+  liftIO $ Log.err $ "Reported: " <> e
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)

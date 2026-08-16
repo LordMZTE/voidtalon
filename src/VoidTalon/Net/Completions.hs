@@ -13,8 +13,6 @@ module VoidTalon.Net.Completions
 where
 
 import Control.Applicative ((<|>))
-import Control.Concurrent (ThreadId, forkIO)
-import Control.Exception (finally)
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Aeson.Types (Parser)
@@ -49,16 +47,14 @@ import VoidTalon.Util (untab)
 perform ::
   -- | Consumer that will be called with incoming updates
   (Update -> IO ()) ->
-  -- | Action to be executed after everything else finished
-  (IO ()) ->
   -- | Connection config
   ConnectionConfig ->
   -- | HTTP connection Manager
   Manager ->
   -- | Context to send the request with
   Context ->
-  IO ThreadId
-perform evchan done conf http ctx = do
+  IO ()
+perform evchan conf http ctx = do
   let endpoint = conf.base_url & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req =
@@ -67,7 +63,7 @@ perform evchan done conf http ctx = do
             requestBody = RequestBodyLBS $ mkCtxRequestBody ctx,
             requestHeaders = getHeaders conf.headers
           }
-  forkIO $ (withResponse req http handleResponse) `finally` done
+  withResponse req http handleResponse
   where
     foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder
 

@@ -19,7 +19,7 @@ handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name s ()
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = vScrollBy vpScroll $ -1
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'j') [])) = vScrollBy vpScroll 1
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
-  liftIO $ Util.blockWriteBufferedBChan EvClosePopup evchan
+  liftIO $ Util.blockWriteBufferedBChan evchan EvClosePopup
 handleEvent _ _ = pure ()
 
 helpText :: T.Text

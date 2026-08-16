@@ -5,6 +5,7 @@ module VoidTalon.TUI.Types
     isRunning,
     isStopped,
     warningA,
+    errorA,
     barA,
     selectedA,
     toolTitleA,
@@ -29,27 +30,37 @@ import VoidTalon.Net.Completions (Update (UpdateMessage))
 import VoidTalon.Net.Models (ModelInfo)
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
+-- | Our Brick event type for events sent to the TUI
+-- Remeber to check if the SemiSemigroup instance can be expanded when adding something here!
 data Event
-  = EvCompletionUpdate Update
-  | EvCompletionDone
-  | EvClosePopup
-  | EvModelList [ModelInfo]
+  = -- | Some new completion data came in, append to timeline
+    EvCompletionUpdate Update
+  | -- | Completions have finishes, reset run state
+    EvCompletionDone
+  | -- | The currently open popup has signeled to be closed
+    EvClosePopup
+  | -- | The server answered a query to the models endpoint
+    EvModelList [ModelInfo]
+  | -- | An error has happened, display error popup.
+    EvError String
 
 instance SemiSemigroup Event where
   EvCompletionUpdate (UpdateMessage ma sa) <>? EvCompletionUpdate (UpdateMessage mb sb) =
     Just $ EvCompletionUpdate (UpdateMessage (ma <> mb) (sa <> sb))
+  EvError _ <>? EvError e = Just $ EvError e -- we always consider the latest error
   _ <>? _ = Nothing
 
 data Name
   = NPromptField
-  | NTimelineVP
-  | NTimelineEntry Int
-  | NToolDialog
-  | NToolManager
-  | NToolManagerVP
-  | NToolManagerEntry Int
+  | NErrorPopup
   | NHelp
   | NModelSelector
+  | NTimelineEntry Int
+  | NTimelineVP
+  | NToolDialog
+  | NToolManager
+  | NToolManagerEntry Int
+  | NToolManagerVP
   deriving (Eq, Ord, Show)
 
 data RunState
@@ -66,6 +77,10 @@ isStopped = not . isRunning
 -- | Attributes for warning text
 warningA :: AttrName
 warningA = attrName "warning"
+
+-- | Attributes for error text
+errorA :: AttrName
+errorA = attrName "error"
 
 -- | Attribute name for the status bar
 barA :: AttrName

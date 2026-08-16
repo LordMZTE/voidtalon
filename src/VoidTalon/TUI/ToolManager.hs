@@ -90,7 +90,7 @@ handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
   sel <- gets (.selected)
   managerStatesL . ix sel . _1 %= not
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
-  liftIO $ Util.blockWriteBufferedBChan EvClosePopup evchan
+  liftIO $ Util.blockWriteBufferedBChan evchan EvClosePopup
 handleEvent _ _ = pure ()
 
 draw :: Manager -> Widget Name

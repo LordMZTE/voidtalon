@@ -17,6 +17,7 @@ executable vt
       VoidTalon.CLI
       VoidTalon.Config
       VoidTalon.JSON
+      VoidTalon.Log
       VoidTalon.Markdown
       VoidTalon.Net
       VoidTalon.Net.Completions

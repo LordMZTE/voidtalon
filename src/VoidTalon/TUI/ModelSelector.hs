@@ -16,7 +16,7 @@ import Brick
 import Brick.Widgets.Border (vBorder)
 import Brick.Widgets.Center (center)
 import Brick.Widgets.List (List, handleListEventVi, list, listSelectedElement, renderList)
-import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent (ThreadId, forkFinally)
 import Control.Exception (catch)
 import Control.Exception.Base (SomeException)
 import Control.Monad.IO.Class (liftIO)
@@ -69,7 +69,7 @@ newSelector active =
 
 handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Selector ()
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
-  liftIO $ Util.blockWriteBufferedBChan EvClosePopup evchan
+  liftIO $ Util.blockWriteBufferedBChan evchan EvClosePopup
 handleEvent _ (VtyEvent (V.EvKey V.KEnter [])) = do
   avail <- gets (.available)
   case avail of
@@ -119,18 +119,25 @@ draw sel = hBox [modelList, vBorder, details]
 
 startModelRequest :: ConnectionConfig -> Manager -> BufferedBChan Event -> EventM Name Selector ()
 startModelRequest con man chan = do
-  tid <- liftIO $ forkIO request
+  tid <-
+    liftIO $
+      forkFinally
+        request
+        ( \case
+            Left e -> Util.blockWriteBufferedBChan chan . EvError $ show e
+            Right () -> pure ()
+        )
   selectorAvailableL .= AMInFlight tid
   where
     request = do
       models <- catch (M.list con man) exnHandler
-      Util.writeBufferedBChan (EvModelList models) chan
+      Util.blockWriteBufferedBChan chan (EvModelList models)
       pure ()
 
     exnHandler :: SomeException -> IO [M.ModelInfo]
     exnHandler e = do
-      -- TODO: log error properly
-      putStrLn $ show e
+      -- we don't need to flush here because the caller will take care of that
+      Util.writeBufferedBChan chan $ EvError $ show e
       pure []
 
 onOpened :: ConnectionConfig -> Manager -> BufferedBChan Event -> EventM Name Selector ()

@@ -86,8 +86,8 @@ pushBufferedBChan e (x : xs) = case x <>? e of
 
 -- | Attempt to send a message to the buffered channel, semisemigroupily buffering it if the channel
 -- is full.
-writeBufferedBChan :: (SemiSemigroup e) => e -> BufferedBChan e -> IO ()
-writeBufferedBChan ev (BufferedBChan ch mbuf) = modifyMVar_ mbuf sendWithBuffer
+writeBufferedBChan :: (SemiSemigroup e) => BufferedBChan e -> e -> IO ()
+writeBufferedBChan (BufferedBChan ch mbuf) ev = modifyMVar_ mbuf sendWithBuffer
   where
     sendWithBuffer buf = do
       let buf' = pushBufferedBChan ev buf
@@ -99,8 +99,8 @@ flushBufferedBChan :: BufferedBChan e -> IO ()
 flushBufferedBChan (BufferedBChan ch mbuf) = modifyMVar_ mbuf $ (>> pure []) . writeBChan ch
 
 -- | Like calling writeBufferedBChan and then flushing, but more efficient.
-blockWriteBufferedBChan :: (SemiSemigroup e) => e -> BufferedBChan e -> IO ()
-blockWriteBufferedBChan ev (BufferedBChan ch mbuf) =
+blockWriteBufferedBChan :: (SemiSemigroup e) => BufferedBChan e -> e -> IO ()
+blockWriteBufferedBChan (BufferedBChan ch mbuf) ev =
   modifyMVar_ mbuf $ (>> pure []) . writeBChan ch . pushBufferedBChan ev
 
 -- | Rotates focus by adding one.
