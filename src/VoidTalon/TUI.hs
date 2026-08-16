@@ -250,13 +250,12 @@ handleEvent ev = do
             Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
             Timeline.stickToBottom
 
+          -- clear entry
+          statePromptEditorL %= applyEdit clearZipper
+
           invalidateCache
 
           startCompletions
-            >>= ( flip when $ do
-                    -- clear entry
-                    statePromptEditorL %= applyEdit clearZipper
-                )
 
       -- Invoke editor with <C-x>
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
@@ -305,8 +304,7 @@ handleEvent ev = do
         -- If the rest the timeline is completely empty, we have nothing to work with.
         unless (null tl) $ do
           stateTimelineL . Timeline.stateEntriesL .= tl
-          _ <- startCompletions
-          pure ()
+          startCompletions
         invalidateCache
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
@@ -325,7 +323,7 @@ handleEvent ev = do
               Timeline.stickToBottom
             invalidateCache
             statePendingToolsL .= rest
-            when (null rest) $ startCompletions >> pure ()
+            when (null rest) $ startCompletions
        in case (st.pendingTools, ev) of
             ((id', _, (_, invoke)) : rest, VtyEvent (V.EvKey (V.KChar 'y') [])) -> do
               result <-
@@ -342,9 +340,9 @@ handleEvent ev = do
             _ -> pure ()
     _ -> pure ()
 
--- | Starts generation using the current timeline.
--- Returns True iff completions could be started
-startCompletions :: EventM n State Bool
+-- | Starts generation using the current timeline, if possible.
+-- If no model is selected, does nothing.
+startCompletions :: EventM n State ()
 startCompletions = do
   st <- get
   case st.models.active of
@@ -367,8 +365,7 @@ startCompletions = do
 
       -- set runStatus to running
       stateRunStateL .= RunStateRunning thread
-      pure True
-    _ -> pure False
+    _ -> pure ()
 
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
