@@ -16,7 +16,7 @@ import Network.HTTP.Client
   )
 import Network.URI.Lens (uriPathLens)
 import System.FilePath ((</>))
-import VoidTalon.Config (ConnectionConfig (..), TomlURI (..), getHeaders)
+import VoidTalon.Config (ConnectionConfig (..), getHeaders)
 import VoidTalon.Net (checkStatusOK)
 
 -- | Information about what model usage costs.  The API sends the prices as strings.
@@ -69,7 +69,7 @@ list ::
   Manager ->
   IO [ModelInfo]
 list conf man = do
-  let endpoint = conf.base_url.inner & uriPathLens %~ (</> "models")
+  let endpoint = conf.base_url & uriPathLens %~ (</> "models")
   req' <- requestFromURI endpoint
   let req = req' {method = "GET", requestHeaders = getHeaders conf.headers}
   res <- httpLbs req man

@@ -1,9 +1,7 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module VoidTalon.Config
   ( Config (..),
-    TomlURI (..),
     ConnectionConfig (..),
     ModelConfig (..),
     parseConfig,
@@ -15,9 +13,9 @@ where
 import Data.Bifunctor (bimap)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import GHC.Generics
 import qualified Network.HTTP.Types as HTTP
 import Network.URI (URI, parseURI)
 import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
@@ -30,29 +28,40 @@ data Config = Config
   { connection :: ConnectionConfig,
     model :: ModelConfig
   }
-  deriving (Generic)
-  deriving (FromValue) via GenericTomlTable Config
 
-newtype TomlURI = TomlURI {inner :: URI}
-
-instance FromValue TomlURI where
-  fromValue (Text' ann txt) = case parseURI $ T.unpack txt of
-    Just uri -> pure $ TomlURI uri
-    Nothing -> failAt ann "invalid URL"
-  fromValue v = typeError "URI" v
+instance FromValue Config where
+  fromValue =
+    parseTableFromValue $
+      Config
+        <$> reqKey "connection"
+        <*> (fromMaybe defaultModelConfig <$> optKey "model")
 
 data ConnectionConfig = ConnectionConfig
-  { base_url :: TomlURI,
+  { base_url :: URI,
     headers :: Map.Map T.Text T.Text
   }
-  deriving (Generic)
-  deriving (FromValue) via GenericTomlTable ConnectionConfig
+
+instance FromValue ConnectionConfig where
+  fromValue =
+    parseTableFromValue $
+      ConnectionConfig
+        <$> reqKeyOf "base_url" parseTomlURI
+        <*> (fromMaybe mempty <$> optKey "headers")
+    where
+      parseTomlURI (Text' ann txt) = case parseURI $ T.unpack txt of
+        Just uri -> pure $ uri
+        Nothing -> failAt ann "invalid URL"
+      parseTomlURI v = typeError "URI" v
 
 data ModelConfig = ModelConfig
   { standard :: Maybe T.Text
   }
-  deriving (Generic)
-  deriving (FromValue) via GenericTomlTable ModelConfig
+
+instance FromValue ModelConfig where
+  fromValue = parseTableFromValue $ ModelConfig <$> optKey "standard"
+
+defaultModelConfig :: ModelConfig
+defaultModelConfig = ModelConfig {standard = Nothing}
 
 parseConfig :: T.Text -> Result String Config
 parseConfig = decode

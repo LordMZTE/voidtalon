@@ -38,7 +38,7 @@ import Network.HTTP.Client
   )
 import Network.URI.Lens (uriPathLens)
 import System.FilePath ((</>))
-import VoidTalon.Config (ConnectionConfig (..), TomlURI (..), getHeaders)
+import VoidTalon.Config (ConnectionConfig (..), getHeaders)
 import VoidTalon.JSON (ToJSONEncoding (..), (.:<>))
 import VoidTalon.Net (checkStatusOK)
 import VoidTalon.Timeline (LLMMessage (..))
@@ -59,7 +59,7 @@ perform ::
   Context ->
   IO ThreadId
 perform evchan done conf http ctx = do
-  let endpoint = conf.base_url.inner & uriPathLens %~ (</> "chat/completions")
+  let endpoint = conf.base_url & uriPathLens %~ (</> "chat/completions")
   req' <- requestFromURI endpoint
   let req =
         req'
