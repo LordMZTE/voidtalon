@@ -26,6 +26,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Process (getCurrentPid)
 import Prelude hiding (init)
 
+{-# NOINLINE logFileHandle #-}
 logFileHandle :: MVar Handle
 logFileHandle = unsafePerformIO newEmptyMVar
 
