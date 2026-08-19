@@ -420,7 +420,8 @@ startCompletions = do
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
 handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
-  stateStatsL .= stats
+  -- Avoid zeroing out stats.
+  when (stats /= Completions.emptyStats) $ stateStatsL .= stats
   zoom stateTimelineL $ do
     -- append text to output
     ents <- gets (.entries)
