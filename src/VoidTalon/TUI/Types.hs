@@ -24,6 +24,7 @@ import Brick (AttrName, Result, Size (Fixed), attrName)
 import Brick.Types (Widget (Widget))
 import Control.Concurrent (ThreadId)
 import qualified Data.Text as T
+import qualified Data.Vector as Vec
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config)
 import VoidTalon.Net.Completions (Update (UpdateMessage))
@@ -40,7 +41,7 @@ data Event
   | -- | The currently open popup has signeled to be closed
     EvClosePopup
   | -- | The server answered a query to the models endpoint
-    EvModelList [ModelInfo]
+    EvModelList (Vec.Vector ModelInfo)
   | -- | An error has happened, display error popup.
     EvError String
 

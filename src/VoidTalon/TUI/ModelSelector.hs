@@ -134,11 +134,11 @@ startModelRequest con man chan = do
       Util.blockWriteBufferedBChan chan (EvModelList models)
       pure ()
 
-    exnHandler :: SomeException -> IO [M.ModelInfo]
+    exnHandler :: SomeException -> IO (Vec.Vector M.ModelInfo)
     exnHandler e = do
       -- we don't need to flush here because the caller will take care of that
       Util.writeBufferedBChan chan $ EvError $ show e
-      pure []
+      pure Vec.empty
 
 onOpened :: ConnectionConfig -> Manager -> BufferedBChan Event -> EventM Name Selector ()
 onOpened con man chan = do
@@ -148,5 +148,5 @@ onOpened con man chan = do
     _ -> pure ()
 
 -- | Invoked from TUI when we get an EvModelList
-modelsReceived :: [M.ModelInfo] -> EventM Name Selector ()
-modelsReceived ms = (selectorAvailableL .=) . AMModels $ list NModelSelector (Vec.fromList ms) 1
+modelsReceived :: (Vec.Vector M.ModelInfo) -> EventM Name Selector ()
+modelsReceived ms = (selectorAvailableL .=) . AMModels $ list NModelSelector ms 1
