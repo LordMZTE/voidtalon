@@ -26,11 +26,10 @@ data Pricing = Pricing
   }
 
 instance FromJSON Pricing where
-  parseJSON (Object v) =
+  parseJSON = withObject "Pricing" $ \v ->
     Pricing
-      <$> (v .: "prompt")
-      <*> (v .: "completion")
-  parseJSON _ = mempty
+      <$> v .: "prompt"
+      <*> v .: "completion"
 
 -- | Information about a model as returned by the /models endpoint.
 -- OpenAI only specifies the id, name, and owned_by fields, the rest are extensions commonly found
@@ -46,23 +45,20 @@ data ModelInfo = ModelInfo
   }
 
 instance FromJSON ModelInfo where
-  parseJSON (Object v) =
+  parseJSON = withObject "ModelInfo" $ \v ->
     ModelInfo
-      <$> (v .: "id")
-      <*> (v .:? "name")
-      <*> (v .:? "description")
-      <*> (v .:? "context_length")
-      <*> (v .:? "pricing")
+      <$> v .: "id"
+      <*> v .:? "name"
+      <*> v .:? "description"
+      <*> v .:? "context_length"
+      <*> v .:? "pricing"
       <*> (v .:? "reasoning" >>= (fmap join . mapM (.:? "supported_efforts")))
-  parseJSON _ = mempty
 
 newtype ListResponse = ListResponse [ModelInfo]
 
 instance FromJSON ListResponse where
-  parseJSON (Object v) =
-    ListResponse
-      <$> (v .: "data")
-  parseJSON _ = mempty
+  parseJSON = withObject "ListResponse" $ \v ->
+    ListResponse <$> v .: "data"
 
 list ::
   ConnectionConfig ->

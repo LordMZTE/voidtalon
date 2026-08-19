@@ -37,9 +37,8 @@ description =
 newtype Parameters = Parameters FilePath
 
 instance FromJSON Parameters where
-  parseJSON (Object v) =
-    Parameters <$> (v .: "path")
-  parseJSON _ = mempty
+  parseJSON = withObject "Parameters" $ \v ->
+    Parameters <$> v .: "path"
 
 invoke :: T.Text -> Either String Invocation
 invoke val = do

@@ -53,27 +53,25 @@ instance ToJSONEncoding JSONRPCMessage where
 data JSONRPCReply r = JSONRPCReply {id :: Int, result :: r}
 
 instance (FromJSON r) => FromJSON (JSONRPCReply r) where
-  parseJSON (Object v) =
+  parseJSON = withObject "JSONRPCReply" $ \v ->
     JSONRPCReply
-      <$> (v .: "id")
-      <*> (v .: "result")
-  parseJSON _ = mempty
+      <$> v .: "id"
+      <*> v .: "result"
 
 -- | An event such as a notification sent by an MCP server while we were waiting for a response.
 data JSONRPCEvent = JSONRPCEvent {method :: T.Text, params :: Value}
 
 instance FromJSON JSONRPCEvent where
-  parseJSON (Object v) =
+  parseJSON = withObject "JSONRPCEvent" $ \v ->
     JSONRPCEvent
-      <$> (v .: "method")
-      <*> (v .: "params")
-  parseJSON _ = mempty
+      <$> v .: "method"
+      <*> v .: "params"
 
 data ServerCapabilities = ServerCapabilities {tools :: Bool}
 
 instance FromJSON ServerCapabilities where
-  parseJSON (Object v) = pure $ ServerCapabilities $ member "tools" v
-  parseJSON _ = mempty
+  parseJSON = withObject "ServerCapabilities" $ \v ->
+    pure $ ServerCapabilities $ member "tools" v
 
 data InitializeReply = InitializeReply
   { capabilities :: ServerCapabilities,
@@ -83,11 +81,10 @@ data InitializeReply = InitializeReply
   }
 
 instance FromJSON InitializeReply where
-  parseJSON (Object v) =
+  parseJSON = withObject "InitializeReply" $ \v ->
     InitializeReply
-      <$> (v .: "capabilities")
-      <*> (v .:<> "instructions")
-  parseJSON _ = mempty
+      <$> v .: "capabilities"
+      <*> v .:<> "instructions"
 
 data RPCFailure
   = -- | Could not decode JSON from server
@@ -121,24 +118,25 @@ data ToolSpec = ToolSpec
   }
 
 instance FromJSON ToolSpec where
-  parseJSON (Object v) =
+  parseJSON = withObject "ToolSpec" $ \v ->
     ToolSpec
-      <$> (v .: "name")
-      <*> (v .: "description")
-      <*> (v .: "inputSchema")
-  parseJSON _ = mempty
+      <$> v .: "name"
+      <*> v .: "description"
+      <*> v .: "inputSchema"
 
 -- | Server reply to "tools/list".
 data ToolListReply = ToolListReply {nextCursor :: Maybe Value, tools :: [ToolSpec]}
 
 instance FromJSON ToolListReply where
-  parseJSON (Object v) = ToolListReply <$> (v .:? "nextCursor") <*> (v .: "tools")
-  parseJSON _ = mempty
+  parseJSON = withObject "ToolListReply" $ \v ->
+    ToolListReply
+      <$> v .:? "nextCursor"
+      <*> v .: "tools"
 
 newtype ToolCallReply = ToolCallReply T.Text
 
 instance FromJSON ToolCallReply where
-  parseJSON (Object v) = do
+  parseJSON = withObject "ToolCallReply" $ \v -> do
     cs <- v .: "content" :: Parser [Object]
     ls <- sequence $ parseContent <$> cs
     pure $ ToolCallReply $ T.unlines ls
@@ -153,4 +151,3 @@ instance FromJSON ToolCallReply where
             -- TODO: we should probably fetch this resource in this case and forward it to the LLM
             pure "[tool responded with resource, this is currently unsupported]"
           x -> pure $ mconcat ["[content of unknown type '", x, "']"]
-  parseJSON _ = mempty

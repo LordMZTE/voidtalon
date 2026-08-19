@@ -211,7 +211,7 @@ data RawUpdate = RawUpdate
   }
 
 instance FromJSON RawUpdate where
-  parseJSON (Object v) =
+  parseJSON = withObject "RawUpdate" $ \v ->
     RawUpdate
       <$> v .: "choices"
       <*> (
@@ -222,12 +222,11 @@ instance FromJSON RawUpdate where
               -- if all else fails, use empty stats
               <|> pure emptyStats
           )
-  parseJSON _ = mempty
 
 data Choice = Choice {stop :: Maybe T.Text, message :: Maybe LLMMessage}
 
 instance FromJSON Choice where
-  parseJSON (Object v) = do
+  parseJSON = withObject "Choice" $ \v ->
     Choice
       <$> ((untab <$>) <$> v .:? "finish_reason")
       <*> ( v .:? "delta"
@@ -247,7 +246,7 @@ instance FromJSON Choice where
       parseTools t = do
         fun <- t .: "function"
         IntMap.singleton
-          <$> (t .: "index")
+          <$> t .: "index"
           <*> ( Tools.Call
                   <$> t .:? "id"
                   -- We treat the name like the arguments - starts empty and is appended onto.  God
@@ -257,4 +256,3 @@ instance FromJSON Choice where
                   -- Untabbing this might become an issue.  We'll deal with it when it does.
                   <*> (untab <$> fun .:<> "arguments")
               )
-  parseJSON _ = mempty

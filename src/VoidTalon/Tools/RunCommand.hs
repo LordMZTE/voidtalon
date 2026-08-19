@@ -47,8 +47,8 @@ description =
 newtype Parameters = Parameters T.Text
 
 instance FromJSON Parameters where
-  parseJSON (Object v) = Parameters <$> (v .: "command")
-  parseJSON _ = mempty
+  parseJSON = withObject "Parameters" $ \v ->
+    Parameters <$> v .: "command"
 
 invoke :: T.Text -> Either String Invocation
 invoke val = do
