@@ -37,7 +37,9 @@ want to work and then run `vt`. There is no noticable delay in startup.
     - [x] Toggling of individual tools, schema and description viewer
     - [x] User confirmation dialog for all tool calls
     - [x] Manually spoofing tool responses
-- [x] Interactive model selection for all available models offered by the provider
+- [x] Interactive switching between multiple configured connections (change between OpenRouter,
+      llama.cpp and other on the fly!)
+- [x] Interactive model selection for all available models offered by the connection
 - [x] Interactive editing of messages
 - [x] Completions via an OpenAI-compatible API, tested with llama.cpp and OpenRouter
 - [x] Reporting of token count and TPS (the latter is only supported on llama.cpp)
