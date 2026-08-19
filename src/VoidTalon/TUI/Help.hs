@@ -32,6 +32,7 @@ helpText =
       "<C-c>        Cancel current operation",
       "<C-t>        Open Tool Manager",
       "<C-s>        Open Model Selector",
+      "<C-f>        Open Connection Selector",
       "<F1>         Open this help window",
       "<Esc>        Close an open popup, such as this help window",
       "",
@@ -57,5 +58,9 @@ helpText =
       "== Model Selector ==",
       "k/j/g/G/...  Move selection",
       "<CR>         Select model",
-      "r            Reload list"
+      "r            Reload list",
+      "",
+      "== Connection Selector ==",
+      "k/j/g/G/...  Move selection",
+      "<CR>         Select connection"
     ]

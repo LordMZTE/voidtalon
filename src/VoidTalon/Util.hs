@@ -13,6 +13,7 @@ module VoidTalon.Util
     blockWriteBufferedBChan,
     focusAdd,
     focusSub,
+    parseTomlVector,
   )
 where
 
@@ -24,11 +25,13 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.IO as LT
+import qualified Data.Vector as Vec
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import System.Process (callProcess)
 import System.Random.Stateful (globalStdGen, randomRM)
+import qualified Toml.Schema as T
 
 -- | Replaces all tabs with four spaces.  We do this because feeding tabs to VTY causes
 -- breakage, and it's cheapest to do here where all strings are still short.
@@ -124,3 +127,8 @@ focusSub ::
 focusSub tot sel = case sel - 1 of
   n | n < 0 -> tot - 1
   n -> n
+
+-- | Parses a TOML value as a vector.
+-- Parsing works the same as for a list.
+parseTomlVector :: (T.FromValue a) => T.Value' l -> T.Matcher l (Vec.Vector a)
+parseTomlVector v = Vec.fromList <$> T.fromValue v

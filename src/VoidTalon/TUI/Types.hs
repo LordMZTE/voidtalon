@@ -26,7 +26,7 @@ import Control.Concurrent (ThreadId)
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Network.HTTP.Client as HTTP
-import VoidTalon.Config (Config)
+import VoidTalon.Config (Config, ConnectionConfig)
 import VoidTalon.Net.Completions (Update (UpdateMessage))
 import VoidTalon.Net.Models (ModelInfo)
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
@@ -42,20 +42,27 @@ data Event
     EvClosePopup
   | -- | The server answered a query to the models endpoint
     EvModelList (Vec.Vector ModelInfo)
-  | -- | An error has happened, display error popup.
+  | -- | An error has happened, display error popup
     EvError String
+  | -- | The current connection is changed by the connection selector
+    EvConnectionChange ConnectionConfig
 
 instance SemiSemigroup Event where
+  -- Completion updates are of monoidal shape
   EvCompletionUpdate (UpdateMessage ma sa) <>? EvCompletionUpdate (UpdateMessage mb sb) =
     Just $ EvCompletionUpdate (UpdateMessage (ma <> mb) (sa <> sb))
-  EvError _ <>? EvError e = Just $ EvError e -- we always consider the latest error
+  -- For these events, we always consider the last message
+  EvError _ <>? EvError e = Just $ EvError e
+  EvConnectionChange _ <>? EvConnectionChange c = Just $ EvConnectionChange c
+  -- In general, we can't combine arbitrary events
   _ <>? _ = Nothing
 
 data Name
-  = NPromptField
+  = NConnectionSelector
   | NErrorPopup
   | NHelp
   | NModelSelector
+  | NPromptField
   | NTimelineEntry Int
   | NTimelineVP
   | NToolDialog
@@ -125,6 +132,7 @@ overlaySizeLimitPercent = 75
 
 data PopupContext = PopupContext
   { config :: Config,
+    connection :: ConnectionConfig,
     httpMan :: HTTP.Manager,
     evchan :: BufferedBChan Event
   }

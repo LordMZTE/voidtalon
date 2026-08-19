@@ -29,6 +29,7 @@ executable vt
       VoidTalon.Tools.RunCommand
       VoidTalon.Tools.WriteFile
       VoidTalon.TUI
+      VoidTalon.TUI.ConnectionSelector
       VoidTalon.TUI.Help
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.ModelSelector

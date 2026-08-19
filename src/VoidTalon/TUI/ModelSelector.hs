@@ -9,6 +9,7 @@ module VoidTalon.TUI.ModelSelector
     draw,
     onOpened,
     modelsReceived,
+    connectionChanged,
   )
 where
 
@@ -28,7 +29,7 @@ import Lens.Micro (Traversal')
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import Network.HTTP.Client (Manager)
-import VoidTalon.Config (Config (..), ConnectionConfig)
+import VoidTalon.Config (ConnectionConfig (..))
 import qualified VoidTalon.Net.Models as M
 import VoidTalon.TUI.Types (Event (..), Name (NModelSelector), PopupContext (..))
 import VoidTalon.Util (BufferedBChan)
@@ -77,11 +78,11 @@ handleEvent _ (VtyEvent (V.EvKey V.KEnter [])) = do
       Just (_, M.ModelInfo {id = id'}) -> selectorActiveL .= Just id'
       Nothing -> pure ()
     _ -> pure ()
-handleEvent PopupContext {config, httpMan, evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = do
+handleEvent PopupContext {connection, httpMan, evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = do
   avail <- gets (.available)
   case avail of
     AMInFlight _ -> pure ()
-    _ -> startModelRequest config.connection httpMan evchan
+    _ -> startModelRequest connection httpMan evchan
 handleEvent _ (VtyEvent ev) =
   zoom (selectorAvailableL . availableModelsModelsL) $
     handleListEventVi (const $ pure ()) ev
@@ -150,3 +151,7 @@ onOpened con man chan = do
 -- | Invoked from TUI when we get an EvModelList
 modelsReceived :: (Vec.Vector M.ModelInfo) -> EventM Name Selector ()
 modelsReceived ms = (selectorAvailableL .=) . AMModels $ list NModelSelector ms 1
+
+-- | Called when the connection changes with the new connection so we can invalidate our models.
+connectionChanged :: ConnectionConfig -> EventM Name Selector ()
+connectionChanged ConnectionConfig {defaultModel} = put $ newSelector defaultModel

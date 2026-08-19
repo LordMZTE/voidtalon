@@ -3,7 +3,6 @@
 module VoidTalon.Config
   ( Config (..),
     ConnectionConfig (..),
-    ModelConfig (..),
     parseConfig,
     findDefaultPath,
     getHeaders,
@@ -16,6 +15,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.Vector as Vec
 import qualified Network.HTTP.Types as HTTP
 import Network.URI (URI, parseURI)
 import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
@@ -23,45 +23,39 @@ import System.FilePath ((</>))
 import Toml
 import Toml.Schema
 import Toml.Schema.FromValue (typeError)
+import VoidTalon.Util (parseTomlVector)
 
 data Config = Config
-  { connection :: ConnectionConfig,
-    model :: ModelConfig
+  { connections :: (Vec.Vector ConnectionConfig)
   }
 
 instance FromValue Config where
   fromValue =
     parseTableFromValue $
       Config
-        <$> reqKey "connection"
-        <*> (fromMaybe defaultModelConfig <$> optKey "model")
+        <$> reqKeyOf "connections" parseTomlVector
 
 data ConnectionConfig = ConnectionConfig
-  { base_url :: URI,
-    headers :: Map.Map T.Text T.Text
+  { name :: T.Text,
+    base_url :: URI,
+    headers :: Map.Map T.Text T.Text,
+    defaultModel :: Maybe T.Text
   }
+  deriving (Eq)
 
 instance FromValue ConnectionConfig where
   fromValue =
     parseTableFromValue $
       ConnectionConfig
-        <$> reqKeyOf "base_url" parseTomlURI
+        <$> reqKey "name"
+        <*> reqKeyOf "base_url" parseTomlURI
         <*> (fromMaybe mempty <$> optKey "headers")
+        <*> optKey "default_model"
     where
       parseTomlURI (Text' ann txt) = case parseURI $ T.unpack txt of
         Just uri -> pure $ uri
         Nothing -> failAt ann "invalid URL"
       parseTomlURI v = typeError "URI" v
-
-data ModelConfig = ModelConfig
-  { standard :: Maybe T.Text
-  }
-
-instance FromValue ModelConfig where
-  fromValue = parseTableFromValue $ ModelConfig <$> optKey "standard"
-
-defaultModelConfig :: ModelConfig
-defaultModelConfig = ModelConfig {standard = Nothing}
 
 parseConfig :: T.Text -> Result String Config
 parseConfig = decode

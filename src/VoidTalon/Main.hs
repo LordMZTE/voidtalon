@@ -58,7 +58,6 @@ mainWithLog = do
       config
       chan
       httpMan
-      config.model.standard
       (builtinTools ++ concatMap snd mcps)
   (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty

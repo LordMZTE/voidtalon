@@ -28,16 +28,18 @@ import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
+import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
 import Text.Printf (printf)
-import VoidTalon.Config (Config (..))
+import VoidTalon.Config (Config (..), ConnectionConfig (..))
 import qualified VoidTalon.Log as Log
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
+import qualified VoidTalon.TUI.ConnectionSelector as CS
 import qualified VoidTalon.TUI.Help as Help
 import qualified VoidTalon.TUI.ModelSelector as MS
 import qualified VoidTalon.TUI.Timeline as Timeline
@@ -50,6 +52,8 @@ import qualified VoidTalon.Util as Util
 
 data State = State
   { config :: Config,
+    -- | The connection currently being used.
+    connection :: ConnectionConfig,
     evchan :: BufferedBChan Event,
     focus :: FocusRing Name,
     promptEditor :: Editor T.Text Name,
@@ -66,11 +70,13 @@ data State = State
     pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
     openPopup :: Maybe Name,
     tools :: TM.Manager,
-    currentError :: Maybe String
+    currentError :: Maybe String,
+    connections :: CS.Selector
   }
 
 makeLensesFor
-  [ ("focus", "stateFocusL"),
+  [ ("connection", "stateConnectionL"),
+    ("focus", "stateFocusL"),
     ("promptEditor", "statePromptEditorL"),
     ("timeline", "stateTimelineL"),
     ("models", "stateModelsL"),
@@ -80,7 +86,8 @@ makeLensesFor
     ("pendingTools", "statePendingToolsL"),
     ("openPopup", "stateOpenPopupL"),
     ("tools", "stateToolsL"),
-    ("currentError", "stateCurrentErrorL")
+    ("currentError", "stateCurrentErrorL"),
+    ("connections", "stateConnectionsL")
   ]
   ''State
 
@@ -88,16 +95,19 @@ mkInitialState ::
   Config ->
   BufferedBChan Event ->
   HTTP.Manager ->
-  Maybe T.Text ->
   [(T.Text, Tools.Tool)] ->
   IO State
-mkInitialState config evchan httpMan model tools =
+mkInitialState config evchan httpMan tools = do
+  connection <- case config.connections Vec.!? 0 of
+    Just c -> pure c
+    Nothing -> fail "You must specify at least one connection in the config!"
   pure $
     State
       { config,
+        connection,
         evchan,
         httpMan,
-        models = MS.newSelector model,
+        models = MS.newSelector connection.defaultModel,
         focus = focusRing [NPromptField, NTimelineVP],
         promptEditor = editorText NPromptField Nothing "",
         timeline = Timeline.initialState,
@@ -107,7 +117,8 @@ mkInitialState config evchan httpMan model tools =
         pendingTools = [],
         openPopup = Nothing,
         tools = TM.newManager tools,
-        currentError = Nothing
+        currentError = Nothing,
+        connections = CS.newSelector config.connections
       }
 
 type App' = App State [Event] Name
@@ -178,6 +189,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
           Just NToolManager -> pure . showPopup "Manage Tools" $ TM.draw st.tools
           Just NHelp -> pure . showPopup "Help" $ Help.draw
           Just NModelSelector -> pure . showPopup "Models" $ MS.draw st.models
+          Just NConnectionSelector -> pure . showPopup "Connections" $ CS.draw st.connections
           Just _ -> undefined -- invalid state
           _ -> []
     output =
@@ -190,7 +202,13 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
     statusBar = withAttr barA (statusBarLeft <+> padLeft Max statusBarRight)
-    statusBarLeft = txt $ fromMaybe "<no model>" st.models.active
+    statusBarLeft =
+      txt $
+        mconcat
+          [ st.connection.name,
+            ", ",
+            fromMaybe "<no model>" st.models.active
+          ]
     statusBarRight =
       txt $
         let run = case st.runState of
@@ -245,11 +263,18 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManage
 handleEvent (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
   st <- get
   openPopup NModelSelector
-  zoom stateModelsL $ MS.onOpened st.config.connection st.httpMan st.evchan
+  zoom stateModelsL $ MS.onOpened st.connection st.httpMan st.evchan
+handleEvent (VtyEvent (V.EvKey (V.KChar 'f') [V.MCtrl])) = openPopup NConnectionSelector
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
-  let popupCtx = PopupContext {config = st.config, httpMan = st.httpMan, evchan = st.evchan}
+  let popupCtx =
+        PopupContext
+          { config = st.config,
+            connection = st.connection,
+            httpMan = st.httpMan,
+            evchan = st.evchan
+          }
   case effectiveFocus st of
     Just NErrorPopup -> case ev of
       (VtyEvent (V.EvKey V.KEsc [])) -> stateCurrentErrorL .= Nothing
@@ -327,6 +352,7 @@ handleEvent ev = do
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
     Just NHelp -> Help.handleEvent popupCtx ev
     Just NModelSelector -> zoom stateModelsL $ MS.handleEvent popupCtx ev
+    Just NConnectionSelector -> zoom stateConnectionsL $ CS.handleEvent popupCtx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -376,7 +402,7 @@ startCompletions = do
           forkFinally
             ( Completions.perform
                 (Util.writeBufferedBChan (st.evchan) . EvCompletionUpdate)
-                st.config.connection
+                st.connection
                 st.httpMan
                 ctx
             )
@@ -453,6 +479,11 @@ handleAppEvent (EvModelList ms) = zoom stateModelsL $ MS.modelsReceived ms
 handleAppEvent (EvError e) = do
   stateCurrentErrorL .= Just e
   liftIO $ Log.err $ "Reported: " <> e
+handleAppEvent (EvConnectionChange c) = do
+  st <- get
+  unless (c == st.connection) $ do
+    stateConnectionL .= c
+    zoom stateModelsL $ MS.connectionChanged c
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)
