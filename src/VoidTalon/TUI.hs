@@ -18,7 +18,7 @@ import Brick.Widgets.Edit
 import Brick.Widgets.List (listSelectedAttr)
 import Control.Applicative ((<|>))
 import Control.Concurrent (forkFinally, killThread)
-import Control.Exception (try)
+import Control.Exception (AsyncException (ThreadKilled), Exception (fromException), try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
@@ -398,7 +398,9 @@ startCompletions = do
             )
             ( \res -> do
                 case res of
-                  Left e -> Util.writeBufferedBChan st.evchan $ EvError $ show e
+                  Left e -> case fromException e of
+                    Just ThreadKilled -> pure () -- user cancelled completions, not an error
+                    _ -> Util.writeBufferedBChan st.evchan $ EvError $ show e
                   Right () -> pure ()
                 Util.blockWriteBufferedBChan st.evchan EvCompletionDone
             )
