@@ -20,7 +20,7 @@ Yes, I was having a laugh when I wrote this.
 | **Language**          | ❌ P\*thon        | ❌ Rust              | ❌ TypeShit               | ✅ Haskell |
 | **RAM**               | ❌ > 100MB        | ✅ < 5 MB            | ❌ > 1 GB                 | ❌ ~100MB  |
 | **Built-in Tools**    | ❌ 19 (??)        | ❌ 25 (???)          | ❌ ∞ (????)               | ✅ 3       |
-| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 2500    |
+| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 3200    |
 | **Unusable Slopware** | ❔ dunno          | ❌ yes               | ❌ yes                    | ✅ no      |
 
 You might also notice the missing "startup time" row, which is because I didn't bother to measure
@@ -37,6 +37,8 @@ want to work and then run `vt`. There is no noticable delay in startup.
     - [x] Toggling of individual tools, schema and description viewer
     - [x] User confirmation dialog for all tool calls
     - [x] Manually spoofing tool responses
+    - [x] Managing tools, each tool can be individiually enabled and disabled, schema and
+          description are shown
 - [x] Interactive switching between multiple configured connections (change between OpenRouter,
       llama.cpp and other on the fly!)
 - [x] Interactive model selection for all available models offered by the connection
@@ -44,8 +46,7 @@ want to work and then run `vt`. There is no noticable delay in startup.
 - [x] Completions via an OpenAI-compatible API, tested with llama.cpp and OpenRouter
 - [x] Reporting of token count and TPS (the latter is only supported on llama.cpp)
 - [x] Fancy TUI markdown rendering and syntax highlighting for code blocks
-- [x] Managing tools, each tool can be individiually enabled and disabled, schema and description
-      are shown
+- [x] Add custom system prompts
 
 ## Built-in tools
 
