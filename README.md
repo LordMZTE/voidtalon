@@ -20,7 +20,7 @@ Yes, I was having a laugh when I wrote this.
 | **Language**          | ❌ P\*thon        | ❌ Rust              | ❌ TypeShit               | ✅ Haskell |
 | **RAM**               | ❌ > 100MB        | ✅ < 5 MB            | ❌ > 1 GB                 | ❌ ~100MB  |
 | **Built-in Tools**    | ❌ 19 (??)        | ❌ 25 (???)          | ❌ ∞ (????)               | ✅ 3       |
-| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 3200    |
+| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 3300    |
 | **Unusable Slopware** | ❔ dunno          | ❌ yes               | ❌ yes                    | ✅ no      |
 
 You might also notice the missing "startup time" row, which is because I didn't bother to measure
@@ -47,6 +47,7 @@ want to work and then run `vt`. There is no noticable delay in startup.
 - [x] Reporting of token count and TPS (the latter is only supported on llama.cpp)
 - [x] Fancy TUI markdown rendering and syntax highlighting for code blocks
 - [x] Add custom system prompts
+- [x] Prompt library support for easy insertion of pre-made prompts
 
 ## Built-in tools
 

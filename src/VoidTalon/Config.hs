@@ -4,7 +4,8 @@ module VoidTalon.Config
   ( Config (..),
     ConnectionConfig (..),
     parseConfig,
-    findDefaultPath,
+    fileName,
+    findDefaultDir,
     getHeaders,
   )
 where
@@ -19,7 +20,6 @@ import qualified Data.Vector as Vec
 import qualified Network.HTTP.Types as HTTP
 import Network.URI (URI, parseURI)
 import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
-import System.FilePath ((</>))
 import Toml
 import Toml.Schema
 import Toml.Schema.FromValue (typeError)
@@ -60,9 +60,14 @@ instance FromValue ConnectionConfig where
 parseConfig :: T.Text -> Result String Config
 parseConfig = decode
 
-findDefaultPath :: IO FilePath
-findDefaultPath =
-  (</> "config.toml") <$> getXdgDirectory XdgConfig "voidtalon"
+-- | Finds the default configuration directory if the user didn't explicitly specify it on the
+-- command line
+findDefaultDir :: IO FilePath
+findDefaultDir = getXdgDirectory XdgConfig "voidtalon"
+
+-- | Name of the config file in the config directory
+fileName :: FilePath
+fileName = "config.toml"
 
 getHeaders :: Map.Map T.Text T.Text -> HTTP.RequestHeaders
 getHeaders = fmap (bimap (CI.mk . T.encodeUtf8) T.encodeUtf8) . Map.toList

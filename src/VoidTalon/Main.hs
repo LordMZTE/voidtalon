@@ -16,6 +16,7 @@ import qualified Graphics.Vty as Vty
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTP
 import System.Exit (exitFailure)
+import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (shell)
 import Toml.Schema (Result (Failure, Success))
@@ -40,8 +41,9 @@ main =
 mainWithLog :: IO ()
 mainWithLog = do
   args <- CLI.readArguments
-  config_content <- fromMaybe Config.findDefaultPath (pure <$> args.config) >>= readConfig
-  config <- case Config.parseConfig config_content of
+  configDir <- fromMaybe Config.findDefaultDir (pure <$> args.config)
+  configContent <- readConfig $ configDir </> Config.fileName
+  config <- case Config.parseConfig configContent of
     Failure errs -> do
       hPutStrLn stderr "Failed to parse configuration:"
       mapM_ (hPutStrLn stderr) errs
@@ -56,6 +58,7 @@ mainWithLog = do
   initState <-
     TUI.mkInitialState
       config
+      configDir
       chan
       httpMan
       (builtinTools ++ concatMap snd mcps)

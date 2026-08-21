@@ -47,6 +47,9 @@ data Event
     EvError String
   | -- | The current connection is changed by the connection selector
     EvConnectionChange ConnectionConfig
+  | -- | Sets the content of the prompt editor to the given lines of text.  Used by the prompt
+    -- library
+    EvFillPromptEditor [T.Text]
 
 instance SemiSemigroup Event where
   -- Completion updates are of monoidal shape
@@ -55,6 +58,7 @@ instance SemiSemigroup Event where
   -- For these events, we always consider the last message
   EvError _ <>? EvError e = Just $ EvError e
   EvConnectionChange _ <>? EvConnectionChange c = Just $ EvConnectionChange c
+  EvFillPromptEditor _ <>? EvFillPromptEditor ls = Just $ EvFillPromptEditor ls
   -- In general, we can't combine arbitrary events
   _ <>? _ = Nothing
 
@@ -64,6 +68,7 @@ data Name
   | NHelp
   | NModelSelector
   | NPromptField
+  | NPromptLibrary
   | NTimelineEntry Int
   | NTimelineVP
   | NToolDialog

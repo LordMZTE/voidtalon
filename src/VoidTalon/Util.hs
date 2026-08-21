@@ -14,6 +14,8 @@ module VoidTalon.Util
     focusAdd,
     focusSub,
     parseTomlVector,
+    writeBufferedBChanAllRev,
+    blockWriteBufferedBChanAllRev,
   )
 where
 
@@ -86,6 +88,26 @@ pushBufferedBChan e [] = [e]
 pushBufferedBChan e (x : xs) = case x <>? e of
   Just e' -> e' : xs
   Nothing -> e : x : xs
+
+-- | Write all given events to the channel in reverse order.
+-- This does not attempt to perform event merging!
+writeBufferedBChanAllRev :: BufferedBChan e -> [e] -> IO ()
+writeBufferedBChanAllRev (BufferedBChan ch mbuf) evs = modifyMVar_ mbuf sendWithBuffer
+  where
+    sendWithBuffer buf = do
+      let buf' = evs ++ buf
+      success <- writeBChanNonBlocking ch buf'
+      pure $ if success then [] else buf'
+
+-- | Like writeBufferedBChanAllRev, but flushes immediately after.  More efficient than manually
+-- flushing.
+blockWriteBufferedBChanAllRev :: BufferedBChan e -> [e] -> IO ()
+blockWriteBufferedBChanAllRev (BufferedBChan ch mbuf) evs = modifyMVar_ mbuf sendWithBuffer
+  where
+    sendWithBuffer buf = do
+      let buf' = evs ++ buf
+      writeBChan ch buf'
+      pure []
 
 -- | Attempt to send a message to the buffered channel, semisemigroupily buffering it if the channel
 -- is full.

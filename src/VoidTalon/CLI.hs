@@ -16,7 +16,7 @@ parser =
           ( long "config"
               <> short 'c'
               <> metavar "CONFIG"
-              <> help "Override configuration file"
+              <> help "Override configuration directory"
           )
       )
     <*> many

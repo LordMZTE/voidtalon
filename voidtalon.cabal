@@ -24,6 +24,7 @@ executable vt
       VoidTalon.Net.MCP
       VoidTalon.Net.MCP.Types
       VoidTalon.Net.Models
+      VoidTalon.PromptLibrary
       VoidTalon.Tools
       VoidTalon.Tools.ReadFile
       VoidTalon.Tools.RunCommand
@@ -33,6 +34,7 @@ executable vt
       VoidTalon.TUI.Help
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.ModelSelector
+      VoidTalon.TUI.PromptLibrary
       VoidTalon.TUI.Timeline
       VoidTalon.TUI.ToolManager
       VoidTalon.TUI.Types

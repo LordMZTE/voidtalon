@@ -42,6 +42,7 @@ import qualified VoidTalon.Net.Completions as Completions
 import qualified VoidTalon.TUI.ConnectionSelector as CS
 import qualified VoidTalon.TUI.Help as Help
 import qualified VoidTalon.TUI.ModelSelector as MS
+import qualified VoidTalon.TUI.PromptLibrary as PL
 import qualified VoidTalon.TUI.Timeline as Timeline
 import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
@@ -71,7 +72,8 @@ data State = State
     openPopup :: Maybe Name,
     tools :: TM.Manager,
     currentError :: Maybe String,
-    connections :: CS.Selector
+    connections :: CS.Selector,
+    promptLibrary :: PL.Library
   }
 
 makeLensesFor
@@ -87,17 +89,20 @@ makeLensesFor
     ("openPopup", "stateOpenPopupL"),
     ("tools", "stateToolsL"),
     ("currentError", "stateCurrentErrorL"),
-    ("connections", "stateConnectionsL")
+    ("connections", "stateConnectionsL"),
+    ("promptLibrary", "statePromptLibraryL")
   ]
   ''State
 
 mkInitialState ::
   Config ->
+  -- | Configuration directory
+  FilePath ->
   BufferedBChan Event ->
   HTTP.Manager ->
   [(T.Text, Tools.Tool)] ->
   IO State
-mkInitialState config evchan httpMan tools = do
+mkInitialState config configDir evchan httpMan tools = do
   connection <- case config.connections Vec.!? 0 of
     Just c -> pure c
     Nothing -> fail "You must specify at least one connection in the config!"
@@ -118,7 +123,8 @@ mkInitialState config evchan httpMan tools = do
         openPopup = Nothing,
         tools = TM.newManager tools,
         currentError = Nothing,
-        connections = CS.newSelector config.connections
+        connections = CS.newSelector config.connections,
+        promptLibrary = PL.newLibrary configDir
       }
 
 type App' = App State [Event] Name
@@ -191,6 +197,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
           Just NHelp -> pure . showPopup "Help" $ Help.draw
           Just NModelSelector -> pure . showPopup "Models" $ MS.draw st.models
           Just NConnectionSelector -> pure . showPopup "Connections" $ CS.draw st.connections
+          Just NPromptLibrary -> pure . showPopup "Prompt Library" $ PL.draw st.promptLibrary
           Just _ -> undefined -- invalid state
           _ -> []
     output =
@@ -266,6 +273,10 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
   openPopup NModelSelector
   zoom stateModelsL $ MS.onOpened st.connection st.httpMan st.evchan
 handleEvent (VtyEvent (V.EvKey (V.KChar 'f') [V.MCtrl])) = openPopup NConnectionSelector
+handleEvent (VtyEvent (V.EvKey (V.KChar 'l') [V.MCtrl])) = do
+  evchan <- gets (.evchan)
+  openPopup NPromptLibrary
+  zoom statePromptLibraryL $ PL.onOpened evchan
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
@@ -345,6 +356,7 @@ handleEvent ev = do
     Just NHelp -> Help.handleEvent popupCtx ev
     Just NModelSelector -> zoom stateModelsL $ MS.handleEvent popupCtx ev
     Just NConnectionSelector -> zoom stateConnectionsL $ CS.handleEvent popupCtx ev
+    Just NPromptLibrary -> zoom statePromptLibraryL $ PL.handleEvent popupCtx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -479,6 +491,8 @@ handleAppEvent (EvConnectionChange c) = do
   unless (c == st.connection) $ do
     stateConnectionL .= c
     zoom stateModelsL $ MS.connectionChanged c
+handleAppEvent (EvFillPromptEditor ls) =
+  statePromptEditorL %= (applyEdit $ const $ textZipper ls Nothing)
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)
