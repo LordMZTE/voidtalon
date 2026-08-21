@@ -40,6 +40,7 @@ helpText =
       "<Cr>         Append message and begin completions",
       "<M-Cr>       Insert a newline",
       "<C-x>        Open external editor",
+      "<M-a>        Append message without starting completions",
       "<M-s>        Append message as system prompt",
       "",
       "== Timeline ==",

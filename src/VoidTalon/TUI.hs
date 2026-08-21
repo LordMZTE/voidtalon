@@ -287,6 +287,8 @@ handleEvent ev = do
         statePromptEditorL %= applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) ->
         appendEditorContent Timeline.PromptEntry >> startCompletions
+      -- append prompt without starting with <M-a>
+      (VtyEvent (V.EvKey (V.KChar 'a') [V.MMeta])) -> appendEditorContent Timeline.PromptEntry
       -- append system prompt with <M-s>
       (VtyEvent (V.EvKey (V.KChar 's') [V.MMeta])) -> appendEditorContent Timeline.SystemEntry
       -- Invoke editor with <C-x>
