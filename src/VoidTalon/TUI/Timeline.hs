@@ -27,7 +27,7 @@ import Lens.Micro
 import Lens.Micro.TH
 import Skylighting as SL
 import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
-import VoidTalon.TUI.Types (Name (..), selectedA, toolResultBorderA, toolTitleA)
+import VoidTalon.TUI.Types (Name (..), selectedA, systemPromptBorderA, toolResultBorderA, toolTitleA)
 import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
 import qualified VoidTalon.Tools as Tools
@@ -57,10 +57,17 @@ messageWidget :: Widget n -> Widget n
 messageWidget = padLeft Max . padLeft messagePadding . border
 
 entryWidget :: Bool -> TL.Entry -> Widget TT.Name
+entryWidget sel (TL.SystemEntry p) =
+  applyWhen sel (withAttr selectedA) inner
+  where
+    inner =
+      overrideAttr borderAttr systemPromptBorderA
+        . messageWidget
+        $ markdownWidget "system-prompt" p
 entryWidget sel (TL.PromptEntry p) =
   applyWhen sel (withAttr selectedA) inner
   where
-    inner = messageWidget $ markdownWidget "prompt" p
+    inner = messageWidget $ markdownWidget "user-prompt" p
 entryWidget sel (TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls)) =
   applyWhen sel (withAttr selectedA) inner
   where
@@ -107,10 +114,13 @@ draw focused State {focus, entries} =
       ([], 0)
       entries
 
+editInner :: T.Text -> IO T.Text
+editInner = fmap LT.toStrict . editInEditor "md" . LT.fromStrict
+
 -- | Invoke the user's editor on the given entry
 editEntry :: TL.Entry -> IO TL.Entry
-editEntry (TL.PromptEntry t) =
-  TL.PromptEntry . LT.toStrict <$> (editInEditor "md" $ LT.fromStrict t)
+editEntry (TL.SystemEntry t) = TL.SystemEntry <$> editInner t
+editEntry (TL.PromptEntry t) = TL.PromptEntry <$> editInner t
 editEntry (TL.OutputEntry (TL.LLMMessage reasoning content toolCalls)) = do
   let separator = "\n" <> T.replicate 100 "=" <> "\n"
   let toEdit = LT.fromChunks [reasoning, separator, content]
@@ -124,9 +134,9 @@ editEntry (TL.OutputEntry (TL.LLMMessage reasoning content toolCalls)) = do
         (LT.toStrict $ mconcat rest)
         toolCalls
 editEntry (TL.ToolResultEntry {id = id', content}) = do
-  edited <- editInEditor "md" $ LT.fromStrict content
+  edited <- editInner content
   -- Can't use update syntax here because that gets us some weird compiler warning
-  pure $ TL.ToolResultEntry {id = id', TL.content = LT.toStrict edited}
+  pure $ TL.ToolResultEntry {id = id', TL.content = edited}
 
 outputVPScroll :: ViewportScroll Name
 outputVPScroll = viewportScroll NTimelineVP

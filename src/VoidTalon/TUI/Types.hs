@@ -14,6 +14,7 @@ module VoidTalon.TUI.Types
     toolManagerToolTitleA,
     toolManagerSchemaTypeA,
     toolManagerSchemaKeyA,
+    systemPromptBorderA,
     bakedWidget,
     overlaySizeLimitPercent,
     PopupContext (..),
@@ -102,11 +103,11 @@ selectedA = attrName "selected"
 toolTitleA :: AttrName
 toolTitleA = attrName "toolTitle"
 
--- | Attribute name used for the border around tool response timeline entries.
+-- | Attribute name used for the border around tool response timeline entries
 toolResultBorderA :: AttrName
 toolResultBorderA = attrName "toolResultBorder"
 
--- | Attribute name used for the headers above plan entries in tħe tool confirmation dialog.
+-- | Attribute name used for the headers above plan entries in tħe tool confirmation dialog
 toolPlanHeaderA :: AttrName
 toolPlanHeaderA = attrName "toolPlanHeader"
 
@@ -114,12 +115,17 @@ toolPlanHeaderA = attrName "toolPlanHeader"
 toolManagerToolTitleA :: AttrName
 toolManagerToolTitleA = attrName "toolManagerToolTitle"
 
--- | Attribute name used for the types shown in the tool manager's schema preview.
+-- | Attribute name used for the types shown in the tool manager's schema preview
 toolManagerSchemaTypeA :: AttrName
 toolManagerSchemaTypeA = attrName "toolManagerSchemaType"
 
+-- | Attribute name used for the keys in the structured viewer in the tool manager schema pane
 toolManagerSchemaKeyA :: AttrName
 toolManagerSchemaKeyA = attrName "toolManagerSchemaKey"
+
+-- | Attribute name for the border around system prompts
+systemPromptBorderA :: AttrName
+systemPromptBorderA = attrName "systemPromptBorder"
 
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into

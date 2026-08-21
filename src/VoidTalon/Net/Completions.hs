@@ -130,6 +130,7 @@ instance ToJSONEncoding Context where
           pair "tools" (list encodeTool tools)
         ]
     where
+      encodeEntry (Timeline.SystemEntry p) = pairs ("role" .= ("system" :: T.Text) <> "content" .= p)
       encodeEntry (Timeline.PromptEntry p) = pairs ("role" .= ("user" :: T.Text) <> "content" .= p)
       encodeEntry (Timeline.OutputEntry (LLMMessage {reasoning, content, toolCalls})) =
         pairs $

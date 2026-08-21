@@ -5,7 +5,8 @@ import qualified Data.Text as T
 import qualified VoidTalon.Tools as Tools
 
 data Entry
-  = PromptEntry T.Text
+  = SystemEntry T.Text
+  | PromptEntry T.Text
   | OutputEntry LLMMessage
   | ToolResultEntry {id :: Tools.CallID, content :: T.Text}
 

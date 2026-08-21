@@ -148,7 +148,8 @@ app =
                   { V.attrStyle = V.SetTo V.bold
                   }
               ),
-              (toolManagerSchemaKeyA, fg V.green)
+              (toolManagerSchemaKeyA, fg V.green),
+              (systemPromptBorderA, fg V.green)
             ]
     }
 
@@ -284,21 +285,10 @@ handleEvent ev = do
       -- supported by vty.
       (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
         statePromptEditorL %= applyEdit breakLine
-      (VtyEvent (V.EvKey V.KEnter [])) -> do
-        let prompt = T.intercalate "\n" $ getEditContents $ st.promptEditor
-        unless (T.null prompt) $ do
-          -- append prompt to timeline
-          zoom stateTimelineL $ do
-            Timeline.stateEntriesL %= (Timeline.PromptEntry prompt :)
-            Timeline.stickToBottom
-
-          -- clear entry
-          statePromptEditorL %= applyEdit clearZipper
-
-          invalidateCache
-
-          startCompletions
-
+      (VtyEvent (V.EvKey V.KEnter [])) ->
+        appendEditorContent Timeline.PromptEntry >> startCompletions
+      -- append system prompt with <M-s>
+      (VtyEvent (V.EvKey (V.KChar 's') [V.MMeta])) -> appendEditorContent Timeline.SystemEntry
       -- Invoke editor with <C-x>
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
         let prompt = LT.intercalate "\n" . fmap LT.fromStrict . getEditContents $ st.promptEditor
@@ -488,3 +478,20 @@ handleAppEvent (EvConnectionChange c) = do
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)
+
+-- | Takes the content of the prompt editor, gives it to the given function to create a timeline
+-- entry, appends this entry to the timeline and clears the text editor.
+appendEditorContent :: (T.Text -> Timeline.Entry) -> EventM Name State ()
+appendEditorContent mkEnt = do
+  ed <- gets (.promptEditor)
+  let prompt = T.intercalate "\n" $ getEditContents $ ed
+  unless (T.null prompt) $ do
+    -- append prompt to timeline
+    zoom stateTimelineL $ do
+      Timeline.stateEntriesL %= (mkEnt prompt :)
+      Timeline.stickToBottom
+
+    -- clear entry
+    statePromptEditorL %= applyEdit clearZipper
+
+    invalidateCache
