@@ -7,6 +7,7 @@ module VoidTalon.Config
     fileName,
     findDefaultDir,
     getHeaders,
+    module VoidTalon.Config.Example,
   )
 where
 
@@ -23,6 +24,7 @@ import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
 import Toml
 import Toml.Schema
 import Toml.Schema.FromValue (typeError)
+import VoidTalon.Config.Example
 import VoidTalon.Util (parseTomlVector)
 
 data Config = Config

@@ -16,6 +16,7 @@ executable vt
       PackageInfo_voidtalon
       VoidTalon.CLI
       VoidTalon.Config
+      VoidTalon.Config.Example
       VoidTalon.JSON
       VoidTalon.Log
       VoidTalon.Markdown
