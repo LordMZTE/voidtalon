@@ -32,6 +32,7 @@ import qualified VoidTalon.Tools.ReadFile
 import qualified VoidTalon.Tools.RunCommand
 import qualified VoidTalon.Tools.WriteFile
 import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
+import System.Directory (createDirectoryIfMissing)
 
 main :: IO ()
 main =
@@ -44,7 +45,7 @@ mainWithLog :: IO ()
 mainWithLog = do
   args <- CLI.readArguments
   configDir <- fromMaybe Config.findDefaultDir (pure <$> args.config)
-  configContent <- readConfig $ configDir </> Config.fileName
+  configContent <- readConfig configDir
   config <- case Config.parseConfig configContent of
     Failure errs -> do
       hPutStrLn stderr "Failed to parse configuration:"
@@ -69,12 +70,14 @@ mainWithLog = do
   sequence_ (MCP.closeConnection . fst <$> mcps)
 
 readConfig :: FilePath -> IO Text
-readConfig path = do
+readConfig dir = do
+  let path = dir </> Config.fileName
   config_result <- try $ Data.ByteString.readFile path
   case config_result :: Either SomeException ByteString of
     Left err -> case fromException err of
       Just ioe | isDoesNotExistError ioe -> do
         hPutStrLn stderr "Config file doesn't exist.  Creating example config..."
+        createDirectoryIfMissing True dir
         TIO.writeFile path Config.exampleConfig
         hPutStrLn stderr $ mconcat ["Created example config at ", path, ", please edit it."]
         exitFailure
