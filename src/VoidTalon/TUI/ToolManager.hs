@@ -83,7 +83,7 @@ handleEvent _ (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   makeVisible $ NToolManagerEntry sel
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
-  let sel = focusSub m.selected (length m.states)
+  let sel = focusSub (length m.states) m.selected
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
 handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
