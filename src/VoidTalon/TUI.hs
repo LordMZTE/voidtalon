@@ -23,6 +23,7 @@ import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
+import Data.Foldable (find)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Text as T
@@ -39,10 +40,12 @@ import VoidTalon.Config (Config (..), ConnectionConfig (..))
 import qualified VoidTalon.Log as Log
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
+import VoidTalon.Net.Models (ModelInfo (..))
 import qualified VoidTalon.TUI.ConnectionSelector as CS
 import qualified VoidTalon.TUI.Help as Help
 import qualified VoidTalon.TUI.ModelSelector as MS
 import qualified VoidTalon.TUI.PromptLibrary as PL
+import qualified VoidTalon.TUI.ReasoningEffort as RE
 import qualified VoidTalon.TUI.Timeline as Timeline
 import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
@@ -73,7 +76,8 @@ data State = State
     tools :: TM.Manager,
     currentError :: Maybe String,
     connections :: CS.Selector,
-    promptLibrary :: PL.Library
+    promptLibrary :: PL.Library,
+    reasoningEffort :: RE.Selector
   }
 
 makeLensesFor
@@ -90,7 +94,8 @@ makeLensesFor
     ("tools", "stateToolsL"),
     ("currentError", "stateCurrentErrorL"),
     ("connections", "stateConnectionsL"),
-    ("promptLibrary", "statePromptLibraryL")
+    ("promptLibrary", "statePromptLibraryL"),
+    ("reasoningEffort", "stateReasoningEffortL")
   ]
   ''State
 
@@ -124,7 +129,8 @@ mkInitialState config configDir evchan httpMan tools = do
         tools = TM.newManager tools,
         currentError = Nothing,
         connections = CS.newSelector config.connections,
-        promptLibrary = PL.newLibrary configDir
+        promptLibrary = PL.newLibrary configDir,
+        reasoningEffort = RE.newSelector
       }
 
 type App' = App State [Event] Name
@@ -133,7 +139,7 @@ app :: App'
 app =
   App
     { appDraw = draw,
-      appChooseCursor = focusRingCursor (.focus),
+      appChooseCursor,
       appHandleEvent = handleEvent,
       appStartEvent = pure (),
       appAttrMap =
@@ -158,6 +164,11 @@ app =
               (systemPromptBorderA, fg V.green)
             ]
     }
+  where
+    appChooseCursor :: State -> [CursorLocation Name] -> Maybe (CursorLocation Name)
+    appChooseCursor state avail = case effectiveFocus state of
+      foc@(Just _) -> find ((== foc) . (.cursorLocationName)) avail
+      _ -> Nothing
 
 effectiveFocus :: State -> Maybe Name
 effectiveFocus st =
@@ -198,6 +209,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
           Just NModelSelector -> pure . showPopup "Models" $ MS.draw st.models
           Just NConnectionSelector -> pure . showPopup "Connections" $ CS.draw st.connections
           Just NPromptLibrary -> pure . showPopup "Prompt Library" $ PL.draw st.promptLibrary
+          Just NReasoningEffort -> pure . showPopup "Reasoning Effort" $ RE.draw st.models.active st.reasoningEffort
           Just _ -> undefined -- invalid state
           _ -> []
     output =
@@ -215,7 +227,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         mconcat
           [ st.connection.name,
             ", ",
-            fromMaybe "<no model>" st.models.active
+            maybe "<no model>" (.id) st.models.active
           ]
     statusBarRight =
       txt $
@@ -277,6 +289,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'l') [V.MCtrl])) = do
   evchan <- gets (.evchan)
   openPopup NPromptLibrary
   zoom statePromptLibraryL $ PL.onOpened evchan
+handleEvent (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) = openPopup NReasoningEffort
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
@@ -357,6 +370,7 @@ handleEvent ev = do
     Just NModelSelector -> zoom stateModelsL $ MS.handleEvent popupCtx ev
     Just NConnectionSelector -> zoom stateConnectionsL $ CS.handleEvent popupCtx ev
     Just NPromptLibrary -> zoom statePromptLibraryL $ PL.handleEvent popupCtx ev
+    Just NReasoningEffort -> zoom stateReasoningEffortL $ RE.handleEvent popupCtx ev
     Just NToolDialog ->
       let finishTool ::
             Tools.CallID ->
@@ -396,9 +410,10 @@ startCompletions = do
     Just m | (isStopped st.runState) -> do
       let ctx =
             Completions.Context
-              { model = m,
+              { model = m.id,
                 timeline = reverse st.timeline.entries,
-                tools = TM.activeTools st.tools
+                tools = TM.activeTools st.tools,
+                reasoningEffort = RE.currentEffort st.reasoningEffort
               }
       -- start completions request
       thread <-

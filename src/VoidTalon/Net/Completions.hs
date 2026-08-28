@@ -5,6 +5,7 @@
 
 module VoidTalon.Net.Completions
   ( perform,
+    ReasoningEffort (..),
     Context (..),
     Update (..),
     TokenStats (..),
@@ -21,7 +22,6 @@ import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char (ord)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Data.Word (Word8)
 import Lens.Micro
@@ -104,20 +104,29 @@ perform evchan conf http ctx = do
     updateFromRaw RawUpdate {choices, stats} =
       sequence_ $
         choices <&> \ch -> do
-          fromMaybe (pure ()) $ (evchan . flip UpdateMessage stats) <$> ch.message
-          fromMaybe (pure ()) $ (evchan . UpdateStop) <$> ch.stop
+          maybe (pure ()) (evchan . flip UpdateMessage stats) ch.message
+          maybe (pure ()) (evchan . UpdateStop) ch.stop
+
+data ReasoningEffort
+  = -- | Don't specify reasoning effort to the API
+    REUnspecified
+  | -- | Control reasoning effort by token count using llama.cpp's API
+    RELlamaCppTokens Word
+  | -- | Use a pre-defined effort using the standard API
+    REStr T.Text
 
 data Context = Context
   { -- | Model to use
     model :: T.Text,
     timeline :: [Timeline.Entry],
-    tools :: [(T.Text, Tools.Description)]
+    tools :: [(T.Text, Tools.Description)],
+    reasoningEffort :: ReasoningEffort
   }
 
 instance ToJSONEncoding Context where
-  toEncoding Context {model, timeline, tools} =
+  toEncoding Context {model, timeline, tools, reasoningEffort} =
     pairs $
-      mconcat
+      mconcat $
         [ "stream" .= True,
           "model" .= model,
           -- This will make the last event include statistics about the token count.  This is part
@@ -129,6 +138,10 @@ instance ToJSONEncoding Context where
           pair "messages" (list encodeEntry timeline),
           pair "tools" (list encodeTool tools)
         ]
+          ++ case reasoningEffort of
+            REUnspecified -> []
+            RELlamaCppTokens n -> ["thinking_budget_tokens" .= n]
+            REStr s -> [pair "reasoning" $ pairs $ "effort" .= s]
     where
       encodeEntry (Timeline.SystemEntry p) = pairs ("role" .= ("system" :: T.Text) <> "content" .= p)
       encodeEntry (Timeline.PromptEntry p) = pairs ("role" .= ("user" :: T.Text) <> "content" .= p)

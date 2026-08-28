@@ -36,6 +36,7 @@ executable vt
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.ModelSelector
       VoidTalon.TUI.PromptLibrary
+      VoidTalon.TUI.ReasoningEffort
       VoidTalon.TUI.Timeline
       VoidTalon.TUI.ToolManager
       VoidTalon.TUI.Types

@@ -69,6 +69,7 @@ data Name
   | NModelSelector
   | NPromptField
   | NPromptLibrary
+  | NReasoningEffort
   | NTimelineEntry Int
   | NTimelineVP
   | NToolDialog

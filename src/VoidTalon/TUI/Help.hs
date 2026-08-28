@@ -34,6 +34,7 @@ helpText =
       "<C-s>        Open Model Selector",
       "<C-f>        Open Connection Selector",
       "<C-l>        Open Prompt Library",
+      "<C-r>        Set Reasoning Effort",
       "<F1>         Open this help window",
       "<Esc>        Close an open popup, such as this help window",
       "",

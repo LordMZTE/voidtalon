@@ -21,7 +21,7 @@ import Data.Bits ((.|.))
 import Data.Functor.Identity (Identity (runIdentity))
 import Data.List (groupBy)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Maybe (catMaybes, isJust)
 import qualified Data.Text as T
 import Graphics.Vty
   ( Attr (..),
@@ -214,8 +214,7 @@ highlightedCode syntax t = case tokResult of
 
     tokImage (ttyp, text) = text' (ttypeAttr ttyp) text
 
-    ttypeAttr ttyp =
-      fromMaybe defAttr $ slStyleToVTY <$> catppuccinMocha.tokenStyles Map.!? ttyp
+    ttypeAttr ttyp = maybe defAttr slStyleToVTY $ catppuccinMocha.tokenStyles Map.!? ttyp
 
     slStyleToVTY :: SL.TokenStyle -> Attr
     slStyleToVTY tstyle =

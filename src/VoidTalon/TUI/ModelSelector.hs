@@ -51,7 +51,7 @@ availableModelsModelsL f = \case
 
 data Selector = Selector
   { -- | Currently active model ID.  Isn't necessarily one that's reported by the server.
-    active :: Maybe T.Text,
+    active :: Maybe M.ModelInfo,
     available :: AvailableModels
   }
 
@@ -64,9 +64,19 @@ makeLensesFor
 newSelector :: Maybe T.Text -> Selector
 newSelector active =
   Selector
-    { active,
+    { active = infoFromConfigured <$> active,
       available = AMUnknown
     }
+  where
+    infoFromConfigured id' =
+      M.ModelInfo
+        { id = id',
+          name = Nothing,
+          description = Nothing,
+          contextLength = Nothing,
+          pricing = Nothing,
+          supportedReasoningEfforts = Nothing
+        }
 
 handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Selector ()
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
@@ -75,7 +85,7 @@ handleEvent _ (VtyEvent (V.EvKey V.KEnter [])) = do
   avail <- gets (.available)
   case avail of
     AMModels ms -> case listSelectedElement ms of
-      Just (_, M.ModelInfo {id = id'}) -> selectorActiveL .= Just id'
+      Just (_, info) -> selectorActiveL .= Just info
       Nothing -> pure ()
     _ -> pure ()
 handleEvent PopupContext {connection, httpMan, evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = do

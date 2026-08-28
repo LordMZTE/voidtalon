@@ -8,7 +8,6 @@ import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString
-import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
@@ -44,7 +43,7 @@ main =
 mainWithLog :: IO ()
 mainWithLog = do
   args <- CLI.readArguments
-  configDir <- fromMaybe Config.findDefaultDir (pure <$> args.config)
+  configDir <- maybe Config.findDefaultDir pure args.config
   configContent <- readConfig configDir
   config <- case Config.parseConfig configContent of
     Failure errs -> do
