@@ -48,6 +48,8 @@ want to work and then run `vt`. There is no noticable delay in startup.
 - [x] Fancy TUI markdown rendering and syntax highlighting for code blocks
 - [x] Add custom system prompts
 - [x] Prompt library support for easy insertion of pre-made prompts
+- [x] Reasoning Control, both with llama.cpp's API for controlling a reasoning token count limit and
+      the general reasoning effort API
 
 ## Built-in tools
 
