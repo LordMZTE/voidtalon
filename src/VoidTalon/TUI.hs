@@ -254,6 +254,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
 handleEvent :: BrickEvent Name [Event] -> EventM Name State ()
 -- Exit with <C-q>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
+handleEvent (VtyEvent (V.EvResize _ _)) = invalidateCache
 -- Scroll with <C-e> and <C-y>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll 1
 handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll $ -1
