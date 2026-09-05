@@ -43,7 +43,7 @@ helpText =
       "<M-CR>       Insert a newline",
       "<C-x>        Open external editor",
       "<M-a>        Append message without starting completions",
-      "<M-s>        Append message as system prompt", "", "== Timeline ==",
+      "<M-s>        Append message as system prompt",
       "",
       "== Timeline ==",
       "k/j          Move selection up/down",
