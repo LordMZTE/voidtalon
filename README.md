@@ -51,6 +51,11 @@ want to work and then run `vt`. There is no noticable delay in startup.
 - [x] Reasoning Control, both with llama.cpp's API for controlling a reasoning token count limit and
       the general reasoning effort API
 
+## Documentation
+
+Comprehensive documentation for how to use VoidTalon is contained in the
+[Wiki](https://git.mzte.de/LordMZTE/voidtalon/wiki).
+
 ## Built-in tools
 
 - `read_file` / `write_file` reading and writing files by path
