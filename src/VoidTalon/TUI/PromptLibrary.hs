@@ -7,7 +7,7 @@ module VoidTalon.TUI.PromptLibrary (Library (), newLibrary, draw, handleEvent, o
 import Brick
 import Brick.Widgets.Center (center)
 import Brick.Widgets.List
-import Control.Exception (SomeException, try)
+import Control.Exception (try)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
@@ -16,9 +16,11 @@ import Lens.Micro (_Just)
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import System.FilePath ((</>))
+import VoidTalon.Config (ConnectionConfig (..))
 import qualified VoidTalon.PromptLibrary as PL
 import VoidTalon.TUI.Types (Event (..), Name (..), PopupContext (..))
 import qualified VoidTalon.Util as Util
+import Control.Exception.Base (SomeException)
 
 type PromptList = List Name String
 
@@ -49,21 +51,40 @@ draw Library {configDir, prompts} = case prompts of
 handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Library ()
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
   liftIO $ Util.blockWriteBufferedBChan evchan EvClosePopup
-handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEnter [])) = do
-  st <- get
-  case st.prompts of
-    Just ps -> case listSelectedElement ps of
-      Just (_, p) -> do
-        res <- liftIO $ try $ PL.readPrompt st.configDir p
-        case res :: Either SomeException T.Text of
-          Left e -> liftIO $ Util.blockWriteBufferedBChan evchan $ EvError $ show e
-          Right content ->
-            liftIO $
-              Util.blockWriteBufferedBChanAllRev
-                evchan
-                [EvClosePopup, EvFillPromptEditor $ T.lines content]
+handleEvent
+  PopupContext
+    { evchan,
+      model,
+      connection,
+      reasoning
+    }
+  (VtyEvent (V.EvKey V.KEnter [])) = do
+    st <- get
+    case st.prompts of
+      Just ps -> case listSelectedElement ps of
+        Just (_, p) -> do
+          let execInfo = PL.ExecInfo {model, connection = connection.name, reasoning}
+          res <- readPrompt st.configDir p execInfo
+          case res :: Either SomeException T.Text of
+            Left e -> liftIO $ Util.blockWriteBufferedBChan evchan $ EvError $ show e
+            Right content ->
+              liftIO $
+                Util.blockWriteBufferedBChanAllRev
+                  evchan
+                  [EvClosePopup, EvFillPromptEditor $ T.lines content]
+        Nothing -> pure ()
       Nothing -> pure ()
-    Nothing -> pure ()
+    where
+      readPrompt ::
+        (Ord n) =>
+        FilePath ->
+        String ->
+        PL.ExecInfo ->
+        EventM n s (Either SomeException T.Text)
+      readPrompt configDir name execInfo = do
+        info@(_, exec) <- liftIO $ PL.inspectPrompt configDir name
+        let f = if exec then suspendAndResume' else liftIO
+        f $ try $ PL.evalPrompt info execInfo
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = loadPrompts evchan
 handleEvent _ (VtyEvent ev) =
   zoom (libraryPromptsL . _Just) $

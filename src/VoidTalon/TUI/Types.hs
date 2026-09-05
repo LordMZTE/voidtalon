@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config, ConnectionConfig)
-import VoidTalon.Net.Completions (Update (UpdateMessage))
+import VoidTalon.Net.Completions (Update (UpdateMessage), ReasoningEffort)
 import VoidTalon.Net.Models (ModelInfo)
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
@@ -146,5 +146,7 @@ data PopupContext = PopupContext
   { config :: Config,
     connection :: ConnectionConfig,
     httpMan :: HTTP.Manager,
-    evchan :: BufferedBChan Event
+    evchan :: BufferedBChan Event,
+    reasoning :: ReasoningEffort,
+    model :: Maybe ModelInfo
   }

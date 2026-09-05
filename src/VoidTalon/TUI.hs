@@ -299,7 +299,9 @@ handleEvent ev = do
           { config = st.config,
             connection = st.connection,
             httpMan = st.httpMan,
-            evchan = st.evchan
+            evchan = st.evchan,
+            reasoning = RE.currentEffort st.reasoningEffort,
+            model = st.models.active
           }
   case effectiveFocus st of
     Just NErrorPopup -> case ev of

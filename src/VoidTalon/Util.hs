@@ -3,6 +3,7 @@
 module VoidTalon.Util
   ( untab,
     editInEditor,
+    mkTempFile,
     remove,
     SemiSemigroup (..),
     BufferedBChan (..),
@@ -50,12 +51,20 @@ editInEditor ext t = do
   editor <-
     fromMaybe "ed" -- fall back to the standard unix editor
       <$> lookupEnv "EDITOR"
-  tmpdir <- getTemporaryDirectory
-  rand <- replicateM 8 $ randomRM ('a', 'z') globalStdGen
-  let path = tmpdir </> ("voidtalon-" <> rand <> "." <> ext)
+  path <- mkTempFile ext
   LT.writeFile path t
   res <- finally (callProcess editor [path] >> LT.readFile path) (removeFile path)
   pure res
+
+-- | Create a name for a temporary file.
+mkTempFile ::
+  -- | File extension
+  String ->
+  IO FilePath
+mkTempFile ext = do
+  tmpdir <- getTemporaryDirectory
+  rand <- replicateM 8 $ randomRM ('a', 'z') globalStdGen
+  pure $ tmpdir </> ("voidtalon-" <> rand <> "." <> ext)
 
 -- | Removes the nth element from a list keeping all others.
 -- no-op if the number is out-of-bounds.
