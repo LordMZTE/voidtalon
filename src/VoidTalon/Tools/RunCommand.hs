@@ -12,11 +12,10 @@ import qualified Data.Text.Encoding as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle, stdout)
 import System.Process
-  ( CreateProcess (std_err),
+  ( CreateProcess (..),
     StdStream (CreatePipe, UseHandle),
     createProcess,
     shell,
-    std_out,
     waitForProcess,
   )
 import VoidTalon.JSON (Schema (..), SchemaType (SchemaTypeObject, SchemaTypeString), emptySchema)
@@ -57,7 +56,12 @@ invoke val = do
   where
     perform command = do
       -- This is a cool trick to bind stdout and stderr to the same pipe.
-      let spec = (shell (T.unpack command)) {std_out = CreatePipe, std_err = UseHandle stdout}
+      let spec =
+            (shell (T.unpack command))
+              { std_out = CreatePipe,
+                std_err = UseHandle stdout,
+                delegate_ctlc = True
+              }
       (Nothing, Just out, Nothing, pid) <- createProcess spec
       output <- consumeAndEcho out
       exit <- waitForProcess pid
