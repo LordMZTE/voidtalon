@@ -99,6 +99,9 @@ makeLensesFor
   ]
   ''State
 
+stateTimelineEntriesL :: Lens' State [Timeline.DisplayEntry]
+stateTimelineEntriesL = stateTimelineL . Timeline.stateEntriesL
+
 mkInitialState ::
   Config ->
   -- | Configuration directory
@@ -161,7 +164,12 @@ app =
                   }
               ),
               (toolManagerSchemaKeyA, fg V.green),
-              (systemPromptBorderA, fg V.green)
+              (systemPromptBorderA, fg V.green),
+              ( foldedReasoningA,
+                (V.brightCyan `on` V.Color240 (240 - 16))
+                  { V.attrStyle = V.SetTo V.bold
+                  }
+              )
             ]
     }
   where
@@ -339,34 +347,38 @@ handleEvent ev = do
         invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
         let idx = max 0 (st.timeline.focus)
-        stateTimelineL . Timeline.stateEntriesL %= remove idx
+        stateTimelineEntriesL %= remove idx
         -- We need to invalidate the cache because indices just shifted.
         invalidateCache
       (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
         let focus = st.timeline.focus
         suspendAndResume $
           mapMOf
-            (stateTimelineL . Timeline.stateEntriesL . ix focus)
+            (stateTimelineEntriesL . ix focus . Timeline.displayEntryEntryL)
             (liftIO . Timeline.editEntry)
             st
         invalidateCacheEntry $ NTimelineEntry focus
       (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
         -- tail of the timeline with the selected entry being the last one
-        let tl' = drop st.timeline.focus $ st.timeline.entries
+        let tl' = drop st.timeline.focus $ st ^. stateTimelineEntriesL
         let tl =
               -- Remove timeline entries from our tail until a prompt or tool result remains
               dropWhile
                 ( \case
-                    (Timeline.OutputEntry _) -> True
+                    (Timeline.DisplayEntry (Timeline.OutputEntry _) _) -> True
                     _ -> False
                 )
                 tl'
 
         -- If the rest the timeline is completely empty, we have nothing to work with.
         unless (null tl) $ do
-          stateTimelineL . Timeline.stateEntriesL .= tl
+          stateTimelineEntriesL .= tl
           startCompletions
         invalidateCache
+      (VtyEvent (V.EvKey (V.KChar '\t') [])) -> do
+        let focus = st.timeline.focus
+        stateTimelineEntriesL . ix focus . Timeline.displayEntryReasoningFoldedL %= not
+        invalidateCacheEntry $ NTimelineEntry focus
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
     Just NHelp -> Help.handleEvent popupCtx ev
@@ -383,7 +395,7 @@ handleEvent ev = do
           finishTool id' content rest = do
             let entry = Timeline.ToolResultEntry {id = id', content = content}
             zoom stateTimelineL $ do
-              Timeline.stateEntriesL %= (entry :)
+              Timeline.stateEntriesL %= (Timeline.mkNewDisplayEntry entry :)
               Timeline.stickToBottom
             invalidateCache
             statePendingToolsL .= rest
@@ -414,7 +426,7 @@ startCompletions = do
       let ctx =
             Completions.Context
               { model = m.id,
-                timeline = reverse st.timeline.entries,
+                timeline = reverse $ (.entry) <$> st ^. stateTimelineEntriesL,
                 tools = TM.activeTools st.tools,
                 reasoningEffort = RE.currentEffort st.reasoningEffort
               }
@@ -448,14 +460,22 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
   when (stats /= Completions.emptyStats) $ stateStatsL .= stats
   zoom stateTimelineL $ do
     -- append text to output
-    ents <- gets (.entries)
+    ents <- gets (^. Timeline.stateEntriesL)
     case ents of
-      (Timeline.OutputEntry prev) : tl -> do
-        Timeline.stateEntriesL .= (Timeline.OutputEntry (prev <> added)) : tl
+      (Timeline.DisplayEntry {entry = Timeline.OutputEntry prev, reasoningFolded}) : tl -> do
+        -- When we first get content, fold reasoning
+        let foldReasoning = T.null prev.content && not (T.null added.content)
+        Timeline.stateEntriesL
+          .= ( Timeline.DisplayEntry
+                 { entry = Timeline.OutputEntry (prev <> added),
+                   reasoningFolded = reasoningFolded || foldReasoning
+                 }
+             )
+            : tl
         -- We modified the last timeline entry, i.e. the one with index 0.
         invalidateCacheEntry $ NTimelineEntry 0
       tl -> do
-        Timeline.stateEntriesL .= (Timeline.OutputEntry added) : tl
+        Timeline.stateEntriesL .= (Timeline.mkNewDisplayEntry $ Timeline.OutputEntry added) : tl
         -- We added a new timeline entry, shifting indices.  Invalidate entire cache.
         invalidateCache
     Timeline.stickToBottom
@@ -470,13 +490,14 @@ handleAppEvent EvCompletionDone = do
       -- reason.
       s
     RunStateRunning _ -> (RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason))
-  case st.timeline.entries of
+  case (.entry) <$> st ^. stateTimelineEntriesL of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
       let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
       -- Append broken calls to timeline right away
       zoom stateTimelineL $ do
         Timeline.stateEntriesL
-          %= ( ( uncurry Timeline.ToolResultEntry
+          %= ( ( Timeline.mkNewDisplayEntry
+                   . uncurry Timeline.ToolResultEntry
                    . (("Error: " <>) . T.pack <$>)
                    <$> brokenCalls
                )
@@ -524,7 +545,7 @@ appendEditorContent mkEnt = do
   unless (T.null prompt) $ do
     -- append prompt to timeline
     zoom stateTimelineL $ do
-      Timeline.stateEntriesL %= (mkEnt prompt :)
+      Timeline.stateEntriesL %= (Timeline.mkNewDisplayEntry (mkEnt prompt) :)
       Timeline.stickToBottom
 
     -- clear entry

@@ -2,7 +2,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module VoidTalon.TUI.Timeline
-  ( State (..),
+  ( DisplayEntry (..),
+    displayEntryEntryL,
+    displayEntryReasoningFoldedL,
+    mkNewDisplayEntry,
+    State (..),
     initialState,
     stateFocusL,
     stateEntriesL,
@@ -27,17 +31,38 @@ import Lens.Micro
 import Lens.Micro.TH
 import Skylighting as SL
 import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
-import VoidTalon.TUI.Types (Name (..), selectedA, systemPromptBorderA, toolResultBorderA, toolTitleA)
+import VoidTalon.TUI.Types
+  ( Name (..),
+    foldedReasoningA,
+    selectedA,
+    systemPromptBorderA,
+    toolResultBorderA,
+    toolTitleA,
+  )
 import qualified VoidTalon.TUI.Types as TT
 import qualified VoidTalon.Timeline as TL
 import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (editInEditor)
 
+data DisplayEntry = DisplayEntry
+  { entry :: TL.Entry,
+    reasoningFolded :: Bool
+  }
+
+makeLensesFor
+  [ ("entry", "displayEntryEntryL"),
+    ("reasoningFolded", "displayEntryReasoningFoldedL")
+  ]
+  ''DisplayEntry
+
+mkNewDisplayEntry :: TL.Entry -> DisplayEntry
+mkNewDisplayEntry ent = DisplayEntry ent False
+
 data State = State
   { -- | Index of the element in the timeline that's focused.  Starts from the bottom.
     focus :: Int,
     -- | These are stored in reverse since we update the latest message.
-    entries :: [TL.Entry]
+    entries :: [DisplayEntry]
   }
 
 makeLensesFor
@@ -56,37 +81,45 @@ messageWidget :: Widget n -> Widget n
 -- This double padding is to align the widget to the right and provide spacing on the left.
 messageWidget = padLeft Max . padLeft messagePadding . border
 
-entryWidget :: Bool -> TL.Entry -> Widget TT.Name
-entryWidget sel (TL.SystemEntry p) =
+entryWidget :: Bool -> DisplayEntry -> Widget TT.Name
+entryWidget sel DisplayEntry {entry = TL.SystemEntry p} =
   applyWhen sel (withAttr selectedA) inner
   where
     inner =
       overrideAttr borderAttr systemPromptBorderA
         . messageWidget
         $ markdownWidget "system-prompt" p
-entryWidget sel (TL.PromptEntry p) =
+entryWidget sel DisplayEntry {entry = TL.PromptEntry p} =
   applyWhen sel (withAttr selectedA) inner
   where
     inner = messageWidget $ markdownWidget "user-prompt" p
-entryWidget sel (TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls)) =
-  applyWhen sel (withAttr selectedA) inner
-  where
-    inner = padRight messagePadding $ vBox widgets
-    widgets =
-      (if T.null reasoning then [] else [reasoningWidget])
-        ++ [replyWidget]
-        ++ (toolsWidget <$> IntMap.elems toolCalls)
+entryWidget
+  sel
+  DisplayEntry
+    { entry = TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls),
+      reasoningFolded
+    } =
+    applyWhen sel (withAttr selectedA) inner
+    where
+      inner = padRight messagePadding $ vBox widgets
+      widgets =
+        (if T.null reasoning then [] else [reasoningWidget])
+          ++ [replyWidget]
+          ++ (toolsWidget <$> IntMap.elems toolCalls)
 
-    reasoningWidget = borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
-    replyWidget = markdownWidget "reply" reply
+      reasoningWidget =
+        if reasoningFolded
+          then withAttr foldedReasoningA $ txt "[Reasoning]"
+          else borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
+      replyWidget = markdownWidget "reply" reply
 
-    toolsWidget Tools.Call {id = _, name, parameters} =
-      hCenter $
-        borderWithLabel (withAttr toolTitleA $ txt name) $
-          highlightedCode jsonSyntax parameters
+      toolsWidget Tools.Call {id = _, name, parameters} =
+        hCenter $
+          borderWithLabel (withAttr toolTitleA $ txt name) $
+            highlightedCode jsonSyntax parameters
 
-    jsonSyntax = SL.defaultSyntaxMap Map.! "JSON"
-entryWidget sel (TL.ToolResultEntry {id = _, content}) =
+      jsonSyntax = SL.defaultSyntaxMap Map.! "JSON"
+entryWidget sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}} =
   applyWhen sel (withAttr selectedA) inner
   where
     inner = overrideAttr borderAttr toolResultBorderA $ messageWidget $ txtWrap content
