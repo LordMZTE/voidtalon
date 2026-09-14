@@ -50,6 +50,7 @@ helpText =
       "d            Delete selected item",
       "e            Edit selected item",
       "<CR>         Regenerate response",
+      "<Tab>        Fold/Unfold reasoning of response",
       "",
       "== Tool Dialog ==",
       "y            Confirm",
