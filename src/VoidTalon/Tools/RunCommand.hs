@@ -66,10 +66,16 @@ invoke val = do
       output <- consumeAndEcho out
       exit <- waitForProcess pid
 
-      let output' = case T.decodeUtf8Lenient . LBS8.toStrict . BSB.toLazyByteString $ output of
-            o | T.null o -> "<no output>"
-            o | T.all isSpace o -> "<only whitespace in output>"
-            o -> o
+      let exitCode = case exit of
+            ExitSuccess -> 0
+            ExitFailure n -> n
+
+          output' = case T.decodeUtf8Lenient . LBS8.toStrict . BSB.toLazyByteString $ output of
+            o
+              | T.null o -> mconcat ["<no output, exit code ", T.show exitCode, ">"]
+              | T.all isSpace o ->
+                  mconcat ["<only whitespace in output, exit code ", T.show exitCode, ">"]
+              | otherwise -> o
 
       pure $ case exit of
         ExitSuccess -> output'
