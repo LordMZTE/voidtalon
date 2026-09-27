@@ -56,6 +56,7 @@ helpText =
       "y            Confirm",
       "n            Deny",
       "s            Spoof",
+      "<C-y/e>      Scroll up/down",
       "",
       "== Tool Manager ==",
       "k/j          Move selection up/down",

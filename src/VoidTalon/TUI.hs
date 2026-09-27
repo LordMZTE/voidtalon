@@ -204,11 +204,13 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
              in pure
                   . centerLayer
                   . hLimitPercent overlaySizeLimitPercent
+                  . vLimitPercent overlaySizeLimitPercent
                   . borderWithLabel (txt "Tool Call Request")
                   . vBox
-                  $ (withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name)
-                    : (txt T.empty) -- empty line for spacing
-                    : boxWidgets
+                  $ [ withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name,
+                      txt T.empty, -- empty line for spacing
+                      withVScrollBars OnRight $ viewport NToolDialog Vertical $ vBox boxWidgets
+                    ]
           _ -> []
         -- intentionally not @effectiveFocus@ to render overlays even when they're not focused.
         ++ case st.openPopup of
@@ -260,12 +262,19 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         $ widget
 
 handleEvent :: BrickEvent Name [Event] -> EventM Name State ()
+handleEvent (VtyEvent (V.EvResize _ _)) = invalidateCache
 -- Exit with <C-q>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'q') [V.MCtrl])) = halt
-handleEvent (VtyEvent (V.EvResize _ _)) = invalidateCache
--- Scroll with <C-e> and <C-y>
-handleEvent (VtyEvent (V.EvKey (V.KChar 'e') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll 1
-handleEvent (VtyEvent (V.EvKey (V.KChar 'y') [V.MCtrl])) = vScrollBy Timeline.outputVPScroll $ -1
+handleEvent (VtyEvent (V.EvKey (V.KChar ch) [V.MCtrl]))
+  | ch == 'e' = do
+      st <- get
+      vScrollBy (vpFor st) 1
+  | ch == 'y' = do
+      st <- get
+      vScrollBy (vpFor st) $ -1
+  where
+    vpFor State {pendingTools = []} = Timeline.outputVPScroll
+    vpFor _ = toolDialogVPScroll
 -- Change focus with <C-w>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
   stateFocusL %= focusNext
@@ -552,3 +561,6 @@ appendEditorContent mkEnt = do
     statePromptEditorL %= applyEdit clearZipper
 
     invalidateCache
+
+toolDialogVPScroll :: ViewportScroll Name
+toolDialogVPScroll = viewportScroll NToolDialog
