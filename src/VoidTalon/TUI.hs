@@ -208,7 +208,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
                   . borderWithLabel (txt "Tool Call Request")
                   . vBox
                   $ [ withAttr toolTitleA $ txtWrap $ "LLM Requested to call " <> name,
-                      txt T.empty, -- empty line for spacing
+                      Util.singleSpacer,
                       withVScrollBars OnRight $ viewport NToolDialog Vertical $ vBox boxWidgets
                     ]
           _ -> []

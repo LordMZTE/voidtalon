@@ -17,9 +17,12 @@ module VoidTalon.Util
     parseTomlVector,
     writeBufferedBChanAllRev,
     blockWriteBufferedBChanAllRev,
+    spacerWidget,
+    singleSpacer,
   )
 where
 
+import Brick (Result (..), Size (Fixed), Widget (..), emptyResult)
 import Brick.BChan (BChan, newBChan, writeBChan, writeBChanNonBlocking)
 import Control.Concurrent (MVar, modifyMVar_, newMVar)
 import Control.Exception (finally)
@@ -29,6 +32,8 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.IO as LT
 import qualified Data.Vector as Vec
+import Graphics.Vty (currentAttr)
+import Graphics.Vty.Image (charFill)
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
@@ -163,3 +168,20 @@ focusSub tot sel = case sel - 1 of
 -- Parsing works the same as for a list.
 parseTomlVector :: (T.FromValue a) => T.Value' l -> T.Matcher l (Vec.Vector a)
 parseTomlVector v = Vec.fromList <$> T.fromValue v
+
+-- | Create a widget that takes up given width and height and renders as background.
+spacerWidget :: (Integral n) => n -> n -> Widget m
+spacerWidget width height =
+  Widget
+    { hSize = Fixed,
+      vSize = Fixed,
+      render =
+        pure $
+          emptyResult
+            { image = charFill currentAttr ' ' width height
+            }
+    }
+
+-- | A widget that takes up one char of space.
+singleSpacer :: Widget n
+singleSpacer = spacerWidget (1 :: Int) 1
