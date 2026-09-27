@@ -11,7 +11,7 @@ import Brick.Widgets.List
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad.IO.Class (liftIO)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
@@ -50,7 +50,13 @@ newLibrary ::
 newLibrary configDir mcps =
   Library
     { configDir,
-      mcpPrompts = mapMaybe (\m -> (m.serverInfo.title,) <$> m.instructions) mcps,
+      mcpPrompts =
+        mapMaybe
+          ( \m ->
+              (fromMaybe m.serverInfo.name m.serverInfo.title,)
+                <$> m.instructions
+          )
+          mcps,
       prompts = Nothing
     }
 

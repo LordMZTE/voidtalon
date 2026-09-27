@@ -75,12 +75,13 @@ instance FromJSON ServerCapabilities where
     pure $ ServerCapabilities $ member "tools" v
 
 data ServerInfo = ServerInfo
-  { title :: T.Text
+  { name :: T.Text,
+    title :: Maybe T.Text
   }
 
 instance FromJSON ServerInfo where
   parseJSON = withObject "ServerInfo" $ \v ->
-    ServerInfo <$> v .: "title"
+    ServerInfo <$> v .: "name" <*> v .:? "title"
 
 data InitializeReply = InitializeReply
   { capabilities :: ServerCapabilities,
