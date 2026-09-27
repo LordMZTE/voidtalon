@@ -27,9 +27,10 @@ executable vt
       VoidTalon.Net.Models
       VoidTalon.PromptLibrary
       VoidTalon.Tools
-      VoidTalon.Tools.ReadFile
-      VoidTalon.Tools.RunCommand
-      VoidTalon.Tools.WriteFile
+      VoidTalon.Tools.BuiltIn
+      VoidTalon.Tools.BuiltIn.ReadFile
+      VoidTalon.Tools.BuiltIn.RunCommand
+      VoidTalon.Tools.BuiltIn.WriteFile
       VoidTalon.TUI
       VoidTalon.TUI.ConnectionSelector
       VoidTalon.TUI.Help

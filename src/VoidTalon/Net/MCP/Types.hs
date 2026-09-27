@@ -9,6 +9,7 @@ module VoidTalon.Net.MCP.Types
     JSONRPCReply (..),
     JSONRPCEvent (..),
     ServerCapabilities (..),
+    ServerInfo (..),
     InitializeReply (..),
     RPCFailure (..),
     InitFailure (..),
@@ -24,7 +25,7 @@ import Data.Aeson.Encoding
 import Data.Aeson.KeyMap (member)
 import Data.Aeson.Types (Parser)
 import qualified Data.Text as T
-import VoidTalon.JSON (ToJSONEncoding (toEncoding), (.:<>))
+import VoidTalon.JSON (ToJSONEncoding (toEncoding))
 
 methodInitialize :: T.Text
 methodInitialize = "initialize"
@@ -73,18 +74,26 @@ instance FromJSON ServerCapabilities where
   parseJSON = withObject "ServerCapabilities" $ \v ->
     pure $ ServerCapabilities $ member "tools" v
 
+data ServerInfo = ServerInfo
+  { title :: T.Text
+  }
+
+instance FromJSON ServerInfo where
+  parseJSON = withObject "ServerInfo" $ \v ->
+    ServerInfo <$> v .: "title"
+
 data InitializeReply = InitializeReply
   { capabilities :: ServerCapabilities,
-    -- TODO: do something with these instructions.  Maybe add them to the system prompt or
-    -- something.  Not sure how these are meant to be used.
-    instructions :: T.Text
+    instructions :: Maybe T.Text,
+    serverInfo :: ServerInfo
   }
 
 instance FromJSON InitializeReply where
   parseJSON = withObject "InitializeReply" $ \v ->
     InitializeReply
       <$> v .: "capabilities"
-      <*> v .:<> "instructions"
+      <*> v .:? "instructions"
+      <*> v .: "serverInfo"
 
 data RPCFailure
   = -- | Could not decode JSON from server

@@ -7,6 +7,7 @@ module VoidTalon.Net.MCP
     InitFailure (..),
     closeConnection,
     spawnStdio,
+    Server (..),
     performInitialization,
     module VoidTalon.Net.MCP.Types,
   )
@@ -107,28 +108,36 @@ jsonRPCCall Connection {transport, nextId} method params = do
         Right (PLeft JSONRPCReply {result}) -> pure $ Right result
         Right (PRight JSONRPCEvent {}) -> receiveReply callID
 
+data Server = Server
+  { tools :: [(T.Text, Tools.Tool)],
+    instructions :: Maybe T.Text,
+    serverInfo :: ServerInfo
+  }
+
 -- | Perform initialization on an MCP connection
-performInitialization :: Connection -> IO (Either InitFailure [(T.Text, Tools.Tool)])
+performInitialization :: Connection -> IO (Either InitFailure Server)
 performInitialization con = do
   reply <- jsonRPCCall con methodInitialize initializationParams
   case reply of
-    Left e -> pure . Left $ InitFailureRPC e
+    Left e -> do
+      Log.err $ "MCP server initialization failed with: " <> show e
+      pure . Left $ InitFailureRPC e
     Right
       ( InitializeReply
           { capabilities = ServerCapabilities {tools = False}
           }
         ) ->
         pure $ Left InitFailureNoTools
-    Right _ -> do
+    Right (InitializeReply {instructions, serverInfo}) -> do
       LBS8.hPutStrLn con.transport.stdin . encodingToLazyByteString . toEncoding $
         JSONRPCMessage {params = emptyObject_, method = methodNotifInitialized, id = Nothing}
-      res <-
+      listToolsRes <-
         bimap InitFailureRPC (liftA2 (,) (.name) (makeToolForSpec con) <$>)
           <$> listTools con Nothing
-      case res of
-        Left e -> Log.err $ "MCP server initialization failed with: " <> show e
+      case listToolsRes of
+        Left e -> Log.err $ "MCP server tool list failed with: " <> show e
         Right l -> Log.info $ mconcat ["MCP server initialized with ", show $ length l, " tools"]
-      pure res
+      pure $ (\tools -> Server {tools, instructions, serverInfo}) <$> listToolsRes
 
 listTools :: Connection -> Maybe Value -> IO (Either RPCFailure [ToolSpec])
 listTools con page = do

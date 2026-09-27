@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Tools.WriteFile (tool) where
+module VoidTalon.Tools.BuiltIn.WriteFile (tool) where
 
 import Data.Aeson hiding (toEncoding)
 import qualified Data.Text as T

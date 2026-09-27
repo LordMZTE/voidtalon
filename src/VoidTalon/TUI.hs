@@ -53,6 +53,8 @@ import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
 import VoidTalon.Util (BufferedBChan, remove)
 import qualified VoidTalon.Util as Util
+import qualified VoidTalon.Net.MCP as MCP
+import VoidTalon.Tools.BuiltIn (builtinTools)
 
 data State = State
   { config :: Config,
@@ -108,9 +110,10 @@ mkInitialState ::
   FilePath ->
   BufferedBChan Event ->
   HTTP.Manager ->
-  [(T.Text, Tools.Tool)] ->
+  -- | MCP servers
+  [MCP.Server] ->
   IO State
-mkInitialState config configDir evchan httpMan tools = do
+mkInitialState config configDir evchan httpMan mcps = do
   connection <- case config.connections Vec.!? 0 of
     Just c -> pure c
     Nothing -> fail "You must specify at least one connection in the config!"
@@ -132,9 +135,11 @@ mkInitialState config configDir evchan httpMan tools = do
         tools = TM.newManager tools,
         currentError = Nothing,
         connections = CS.newSelector config.connections,
-        promptLibrary = PL.newLibrary configDir,
+        promptLibrary = PL.newLibrary configDir mcps,
         reasoningEffort = RE.newSelector
       }
+  where
+    tools = builtinTools ++ (concatMap (.tools) mcps)
 
 type App' = App State [Event] Name
 

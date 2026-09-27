@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Tools.RunCommand (tool) where
+module VoidTalon.Tools.BuiltIn.RunCommand (tool) where
 
 import Data.Aeson
 import qualified Data.ByteString.Builder as BSB

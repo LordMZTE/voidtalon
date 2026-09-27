@@ -9,7 +9,6 @@ import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text.IO as TIO
 import qualified Graphics.Vty as Vty
@@ -26,10 +25,6 @@ import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Log as Log
 import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.TUI as TUI
-import qualified VoidTalon.Tools as Tools
-import qualified VoidTalon.Tools.ReadFile
-import qualified VoidTalon.Tools.RunCommand
-import qualified VoidTalon.Tools.WriteFile
 import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
 import System.Directory (createDirectoryIfMissing)
 
@@ -63,7 +58,7 @@ mainWithLog = do
       configDir
       chan
       httpMan
-      (builtinTools ++ concatMap snd mcps)
+      (snd <$> mcps)
   (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty
   sequence_ (MCP.closeConnection . fst <$> mcps)
@@ -88,14 +83,7 @@ readConfig dir = do
           >> exitFailure
     Right conf -> pure $ decodeUtf8 conf
 
-builtinTools :: [(T.Text, Tools.Tool)]
-builtinTools =
-  [ ("read_file", VoidTalon.Tools.ReadFile.tool),
-    ("write_file", VoidTalon.Tools.WriteFile.tool),
-    ("run_command", VoidTalon.Tools.RunCommand.tool)
-  ]
-
-startStdioMCPServers :: [String] -> IO [(MCP.Connection, [(T.Text, Tools.Tool)])]
+startStdioMCPServers :: [String] -> IO [(MCP.Connection, MCP.Server)]
 startStdioMCPServers = sequence . fmap startOne
   where
     startOne cmd = do
@@ -105,4 +93,4 @@ startStdioMCPServers = sequence . fmap startOne
       initRes <- MCP.performInitialization mcp
       case initRes of
         Left err -> throwIO err
-        Right tools -> pure (mcp, tools)
+        Right caps -> pure (mcp, caps)

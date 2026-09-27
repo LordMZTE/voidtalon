@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module VoidTalon.Tools.ReadFile (tool) where
+module VoidTalon.Tools.BuiltIn.ReadFile (tool) where
 
 import Data.Aeson hiding (toEncoding)
 import Data.Char (isSpace)
