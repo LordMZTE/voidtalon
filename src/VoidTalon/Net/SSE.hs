@@ -5,6 +5,7 @@
 
 module VoidTalon.Net.SSE (Event (..), nullEvent, readStream) where
 
+import Control.Monad (unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
@@ -18,6 +19,7 @@ data Event = Event
   { content :: LBS.ByteString,
     id :: Maybe LBS.ByteString
   }
+  deriving (Eq)
 
 nullEvent :: Event
 nullEvent = Event {content = LBS.empty, id = Nothing}
@@ -27,9 +29,9 @@ readStream :: forall m. (MonadIO m) => BodyReader -> (Event -> m ()) -> m ()
 readStream reader handler = takeLines (mempty, nullEvent)
   where
     takeLines :: (BSB.Builder, Event) -> m ()
-    takeLines state =
+    takeLines state@(_, ev) =
       liftIO reader >>= \case
-        c | BS.null c -> pure ()
+        c | BS.null c -> unless (ev == nullEvent) $ handler ev
         chunk -> do
           state' <- BS.foldl' foldChar (pure state) chunk
           takeLines state'
