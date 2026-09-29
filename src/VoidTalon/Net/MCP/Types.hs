@@ -52,13 +52,13 @@ data JSONRPCMessage = JSONRPCMessage {id :: Maybe Int, method :: T.Text, params 
 
 instance ToJSONEncoding JSONRPCMessage where
   toEncoding JSONRPCMessage {id = id', method, params} =
-    pairs $
-      mconcat
-        [ "jsonrpc" .= ("2.0" :: T.Text),
-          "id" .= id',
-          "method" .= method,
-          pair "params" params
-        ]
+    pairs
+      . mconcat
+      $ maybeToList (("id" .=) <$> id')
+        ++ [ "jsonrpc" .= ("2.0" :: T.Text),
+             "method" .= method,
+             pair "params" params
+           ]
 
 data JSONRPCServerMessage r
   = JSONRPCServerReply (JSONRPCReply r)
