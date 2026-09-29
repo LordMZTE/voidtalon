@@ -32,7 +32,7 @@ want to work and then run `vt`. There is no noticable delay in startup.
 
 - [x] Vim-inspired keybindings (not modal yet)
 - [x] Tool calling
-    - [x] MCP over stdio (HTTP is coming soon)
+    - [x] MCP over stdio and HTTP
     - [x] A small, no-nonsense collection of built-in tools (see below)
     - [x] Toggling of individual tools, schema and description viewer
     - [x] User confirmation dialog for all tool calls
