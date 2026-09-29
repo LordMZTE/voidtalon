@@ -25,6 +25,7 @@ executable vt
       VoidTalon.Net.MCP
       VoidTalon.Net.MCP.Types
       VoidTalon.Net.Models
+      VoidTalon.Net.SSE
       VoidTalon.PromptLibrary
       VoidTalon.Tools
       VoidTalon.Tools.BuiltIn
@@ -73,6 +74,7 @@ executable vt
       , toml-parser           >= 2.0  && < 2.1
       , vector                >= 0.13 && < 0.14
       , vty                   >= 6.4  && < 6.7
+      , mtl                   >= 2.3  && < 2.4
   ghc-options: -Wall
                -Wcompat
                -Widentities

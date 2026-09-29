@@ -3,7 +3,7 @@
 module VoidTalon.Main (main) where
 
 import Brick.Main (customMainWithDefaultVty)
-import Control.Exception (bracket, fromException, throwIO, try)
+import Control.Exception (bracket, fromException, try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
@@ -14,6 +14,7 @@ import qualified Data.Text.IO as TIO
 import qualified Graphics.Vty as Vty
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTP
+import System.Directory (createDirectoryIfMissing)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
@@ -26,7 +27,6 @@ import qualified VoidTalon.Log as Log
 import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.TUI as TUI
 import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
-import System.Directory (createDirectoryIfMissing)
 
 main :: IO ()
 main =
@@ -50,7 +50,12 @@ mainWithLog = do
       mapM_ (hPutStrLn stderr) warns
       pure conf
   httpMan <- HTTP.newManager HTTP.tlsManagerSettings
-  mcps <- startStdioMCPServers args.mcp
+  mcps <-
+    mconcat
+      <$> sequence
+        [ startStdioMCPServers args.mcp,
+          startHTTPMCPServers httpMan args.mcpHttp
+        ]
   chan <- newBufferedBChan
   initState <-
     TUI.mkInitialState
@@ -84,13 +89,23 @@ readConfig dir = do
     Right conf -> pure $ decodeUtf8 conf
 
 startStdioMCPServers :: [String] -> IO [(MCP.Connection, MCP.Server)]
-startStdioMCPServers = sequence . fmap startOne
+startStdioMCPServers = mapM startOne
   where
     startOne cmd = do
       putStrLn $ "starting MCP server `" <> cmd <> "`"
       let spec = shell cmd
       mcp <- MCP.spawnStdio spec
-      initRes <- MCP.performInitialization mcp
-      case initRes of
-        Left err -> throwIO err
-        Right caps -> pure (mcp, caps)
+      caps <- MCP.performInitialization mcp
+      pure (mcp, caps)
+
+startHTTPMCPServers ::
+  HTTP.Manager ->
+  [MCP.HTTPConnectionSpec] ->
+  IO [(MCP.Connection, MCP.Server)]
+startHTTPMCPServers man = mapM startOne
+  where
+    startOne spec = do
+      putStrLn $ "connecting to MCP server `" <> show spec.uri <> "`"
+      mcp <- MCP.connectHTTP man spec
+      caps <- MCP.performInitialization mcp
+      pure (mcp, caps)

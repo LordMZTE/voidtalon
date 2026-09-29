@@ -1,7 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module VoidTalon.Net.Completions
   ( perform,
@@ -17,13 +15,9 @@ import Control.Applicative ((<|>))
 import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Aeson.Types (Parser)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Char (ord)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Text as T
-import Data.Word (Word8)
 import Lens.Micro
 import Network.HTTP.Client
   ( BodyReader,
@@ -39,6 +33,7 @@ import System.FilePath ((</>))
 import VoidTalon.Config (ConnectionConfig (..), getHeaders)
 import VoidTalon.JSON (ToJSONEncoding (..), (.:<>))
 import VoidTalon.Net (checkStatusOK)
+import qualified VoidTalon.Net.SSE as SSE
 import VoidTalon.Timeline (LLMMessage (..))
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
@@ -65,38 +60,15 @@ perform evchan conf http ctx = do
           }
   withResponse req http handleResponse
   where
-    foldChar :: IO BSB.Builder -> Word8 -> IO BSB.Builder
-
-    -- Hit newline, consume buffer and start with new empty buffer
-    foldChar prev ch | ch == (fromIntegral $ ord '\n') = do
-      line <- prev
-      processLine $ BSB.toLazyByteString line
-      pure mempty
-
-    -- Not newline, append to buffer
-    foldChar prev ch = (<> BSB.word8 ch) <$> prev
-
-    takeLines :: BSB.Builder -> BodyReader -> IO ()
-    takeLines buf res = do
-      chunk <- res
-      if chunk == ""
-        then pure ()
-        else do
-          buf' <- BS.foldl' foldChar (pure buf) chunk
-          takeLines buf' res
-
-    processLine :: LBS.ByteString -> IO ()
-    processLine l | l LBS.!? 0 == Just ':' = pure () -- comment
-    processLine "data: [DONE]" = pure () -- completely useless terminator line
-    processLine (LBS.stripPrefix "data:" -> Just l) = do
-      case decode l of
-        Just p -> updateFromRaw p
-        Nothing -> pure () -- parse error
-    processLine _ = pure () -- garbage
     handleResponse :: Response BodyReader -> IO ()
-    handleResponse res =
-      checkStatusOK res >> takeLines mempty res.responseBody
-
+    handleResponse res = do
+      checkStatusOK res
+      SSE.readStream res.responseBody $ \SSE.Event {content} ->
+        if content == "[DONE]"
+          then pure ()
+          else case decode content of
+            Just p -> updateFromRaw p
+            Nothing -> pure () -- parse error
     mkCtxRequestBody :: Context -> LBS.ByteString
     mkCtxRequestBody = encodingToLazyByteString . toEncoding
 

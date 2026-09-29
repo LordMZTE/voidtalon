@@ -6,6 +6,7 @@ module VoidTalon.Net.MCP.Types
     methodToolsCall,
     methodNotifInitialized,
     JSONRPCMessage (..),
+    JSONRPCServerMessage (..),
     JSONRPCReply (..),
     JSONRPCEvent (..),
     ServerCapabilities (..),
@@ -16,6 +17,8 @@ module VoidTalon.Net.MCP.Types
     ToolSpec (..),
     ToolListReply (..),
     ToolCallReply (..),
+    HeaderMap,
+    HTTPConnectionSpec (..),
   )
 where
 
@@ -24,7 +27,13 @@ import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding
 import Data.Aeson.KeyMap (member)
 import Data.Aeson.Types (Parser)
+import qualified Data.CaseInsensitive as CI
+import qualified Data.Map as Map
+import Data.Maybe (maybeToList)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Network.HTTP.Types as HTTP
+import Network.URI (URI, parseURI)
 import VoidTalon.JSON (ToJSONEncoding (toEncoding))
 
 methodInitialize :: T.Text
@@ -50,6 +59,21 @@ instance ToJSONEncoding JSONRPCMessage where
           "method" .= method,
           pair "params" params
         ]
+
+data JSONRPCServerMessage r
+  = JSONRPCServerReply (JSONRPCReply r)
+  | JSONRPCServerEvent JSONRPCEvent
+
+instance (FromJSON r) => FromJSON (JSONRPCServerMessage r) where
+  parseJSON obj =
+    withObject
+      "JSONRPCServerMessage"
+      ( \v ->
+          if member "id" v
+            then JSONRPCServerReply <$> parseJSON obj
+            else JSONRPCServerEvent <$> parseJSON obj
+      )
+      obj
 
 data JSONRPCReply r = JSONRPCReply {id :: Int, result :: r}
 
@@ -101,14 +125,14 @@ data RPCFailure
     RPCFailureDecode String
   | -- | Server responded with bad message ID
     RPCFailureIDMismatch
+  | -- | Server sent no response to method call or only unrelated events
+    RPCFailureNoResponse
   deriving (Show)
 
 instance Exception RPCFailure
 
 data InitFailure
-  = -- | Communication with server Failed
-    InitFailureRPC RPCFailure
-  | -- | Server does not have to tools capability
+  = -- | Server does not have to tools capability
     InitFailureNoTools
   deriving (Show)
 
@@ -161,3 +185,24 @@ instance FromJSON ToolCallReply where
             -- TODO: we should probably fetch this resource in this case and forward it to the LLM
             pure "[tool responded with resource, this is currently unsupported]"
           x -> pure $ mconcat ["[content of unknown type '", x, "']"]
+
+type HeaderMap = Map.Map T.Text T.Text
+
+data HTTPConnectionSpec = HTTPConnectionSpec
+  { uri :: URI,
+    headers :: [HTTP.Header]
+  }
+
+instance Read HTTPConnectionSpec where
+  readsPrec _ s = maybeToList $ do
+    let t = T.pack s
+    -- Using `<-` instead of `let` to handle non-exhaustive pattern
+    uri' : headers' <- Just $ T.split ('|' ==) t
+    uri <- parseURI $ T.unpack uri'
+    headers <- mapM parseHeaderKV headers'
+    Just (HTTPConnectionSpec {uri, headers}, [])
+    where
+      parseHeaderKV :: T.Text -> Maybe HTTP.Header
+      parseHeaderKV kv = case T.split ('=' ==) kv of
+        [k, v] -> Just (CI.mk $ T.encodeUtf8 k, T.encodeUtf8 v)
+        _ -> Nothing

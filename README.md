@@ -20,7 +20,7 @@ Yes, I was having a laugh when I wrote this.
 | **Language**          | ❌ P\*thon        | ❌ Rust              | ❌ TypeShit               | ✅ Haskell |
 | **RAM**               | ❌ > 100MB        | ✅ < 5 MB            | ❌ > 1 GB                 | ❌ ~100MB  |
 | **Built-in Tools**    | ❌ 19 (??)        | ❌ 25 (???)          | ❌ ∞ (????)               | ✅ 3       |
-| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 3500    |
+| **Lines of Code**     | ❌ 191,835 (????) | ❌ 656,863 (???????) | ❌ 5,859,629 (??????????) | ✅ 3900    |
 | **Unusable Slopware** | ❔ dunno          | ❌ yes               | ❌ yes                    | ✅ no      |
 
 You might also notice the missing "startup time" row, which is because I didn't bother to measure
