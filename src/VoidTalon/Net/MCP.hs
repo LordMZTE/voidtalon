@@ -159,6 +159,7 @@ jsonRPCCall Connection {transport, nextId} method params = case transport of
         JSONRPCServerReply JSONRPCReply {result} -> pure result
         JSONRPCServerEvent JSONRPCEvent {} -> receiveReplyStdio callID stdout
     receiveReplyHTTPSSE :: Int -> SSE.Event -> StateT (Maybe r) IO ()
+    receiveReplyHTTPSSE _ SSE.Event {content = ""} = pure ()
     receiveReplyHTTPSSE callID SSE.Event {content} = do
       res <- liftIO $ decodeResponse content
       case res of
