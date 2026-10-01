@@ -5,6 +5,7 @@ module VoidTalon.Net.MCP.Types
     methodToolsList,
     methodToolsCall,
     methodNotifInitialized,
+    hSessionID,
     JSONRPCMessage (..),
     JSONRPCServerMessage (..),
     JSONRPCReply (..),
@@ -30,6 +31,7 @@ import Data.Aeson.Types (Parser)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Map as Map
 import Data.Maybe (maybeToList)
+import Data.String (IsString)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Network.HTTP.Types as HTTP
@@ -47,6 +49,9 @@ methodToolsCall = "tools/call"
 
 methodNotifInitialized :: T.Text
 methodNotifInitialized = "notifications/initialized"
+
+hSessionID :: (IsString a) => a
+hSessionID = "MCP-Session-Id"
 
 data JSONRPCMessage = JSONRPCMessage {id :: Maybe Int, method :: T.Text, params :: Encoding}
 

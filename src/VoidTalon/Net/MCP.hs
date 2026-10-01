@@ -26,6 +26,7 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Data.Foldable (find, toList)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.Text as T
 import Network.HTTP.Client (httpNoBody)
 import qualified Network.HTTP.Client as HTTP
@@ -70,7 +71,11 @@ initializationParams =
 -- | A connection to an MCP server
 data Transport
   = TransportStdio {stdin :: Handle, stdout :: Handle, processHandle :: ProcessHandle}
-  | TransportHTTP {man :: HTTP.Manager, baseReq :: HTTP.Request}
+  | TransportHTTP
+      { man :: HTTP.Manager,
+        baseReq :: HTTP.Request,
+        currentSessionID :: IORef (Maybe BS8.ByteString)
+      }
 
 data Connection = Connection {transport :: Transport, nextId :: MVar Int}
 
@@ -99,10 +104,16 @@ connectHTTP man HTTPConnectionSpec {uri, headers} = do
   nextId <- newMVar 0
   baseReq' <- HTTP.requestFromURI uri
   let baseReq = baseReq' {HTTP.method = "POST", HTTP.requestHeaders = headers'}
-  pure $ Connection {transport = TransportHTTP {man, baseReq}, nextId}
+  currentSessionID <- newIORef Nothing
+  pure $ Connection {transport = TransportHTTP {man, baseReq, currentSessionID}, nextId}
 
 useId :: MVar Int -> IO Int
 useId mv = modifyMVar mv $ pure . ((+ 1) &&& id)
+
+maybeAddSessionIDHeader :: HTTP.Request -> Maybe BS8.ByteString -> HTTP.Request
+maybeAddSessionIDHeader req Nothing = req
+maybeAddSessionIDHeader req (Just sessionID) =
+  req {HTTP.requestHeaders = (hSessionID, sessionID) : req.requestHeaders}
 
 jsonRPCCall ::
   forall r.
@@ -120,15 +131,17 @@ jsonRPCCall Connection {transport, nextId} method params = case transport of
     LBS8.hPutStrLn stdin . encodingToLazyByteString $ toEncoding msg
     hFlush stdin
     receiveReplyStdio callID stdout
-  TransportHTTP {man, baseReq} -> do
+  TransportHTTP {man, baseReq, currentSessionID} -> do
     callID <- useId nextId
     let msg = JSONRPCMessage {id = Just callID, method, params}
-    let req =
-          baseReq
-            { HTTP.requestBody = HTTP.RequestBodyLBS . encodingToLazyByteString $ toEncoding msg
-            }
+    let requestBody = HTTP.RequestBodyLBS . encodingToLazyByteString $ toEncoding msg
+    maybeSessionID <- readIORef currentSessionID
+    let req = maybeAddSessionIDHeader baseReq {HTTP.requestBody} maybeSessionID
     HTTP.withResponse req man $ \res -> do
       checkStatusOK res
+      case find ((hSessionID ==) . fst) res.responseHeaders of
+        Just (_, newID) -> writeIORef currentSessionID $ Just newID
+        Nothing -> pure ()
       let contentType = find ((HTTP.hContentType ==) . fst) res.responseHeaders
       case contentType of
         Just (_, "application/json") -> do
@@ -174,11 +187,10 @@ jsonRPCCall Connection {transport, nextId} method params = case transport of
 jsonRPCNotify :: Connection -> T.Text -> Encoding -> IO ()
 jsonRPCNotify con method params = case con.transport of
   TransportStdio {stdin} -> LBS8.hPutStrLn stdin . encodingToLazyByteString $ toEncoding msg
-  TransportHTTP {man, baseReq} -> do
-    let req =
-          baseReq
-            { HTTP.requestBody = HTTP.RequestBodyLBS . encodingToLazyByteString $ toEncoding msg
-            }
+  TransportHTTP {man, baseReq, currentSessionID} -> do
+    let requestBody = HTTP.RequestBodyLBS . encodingToLazyByteString $ toEncoding msg
+    maybeSessionID <- readIORef currentSessionID
+    let req = maybeAddSessionIDHeader baseReq {HTTP.requestBody} maybeSessionID
     res <- httpNoBody req man
     checkStatusOK res
   where
