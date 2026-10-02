@@ -31,7 +31,7 @@ import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
 import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
-import Lens.Micro
+import Lens.Micro hiding (folded)
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import qualified Network.HTTP.Client as HTTP
@@ -40,6 +40,7 @@ import VoidTalon.Config (Config (..), ConnectionConfig (..))
 import qualified VoidTalon.Log as Log
 import VoidTalon.Net.Completions (Update (..))
 import qualified VoidTalon.Net.Completions as Completions
+import qualified VoidTalon.Net.MCP as MCP
 import VoidTalon.Net.Models (ModelInfo (..))
 import qualified VoidTalon.TUI.ConnectionSelector as CS
 import qualified VoidTalon.TUI.Help as Help
@@ -51,10 +52,9 @@ import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
+import VoidTalon.Tools.BuiltIn (builtinTools)
 import VoidTalon.Util (BufferedBChan, remove)
 import qualified VoidTalon.Util as Util
-import qualified VoidTalon.Net.MCP as MCP
-import VoidTalon.Tools.BuiltIn (builtinTools)
 
 data State = State
   { config :: Config,
@@ -172,6 +172,11 @@ app =
               (systemPromptBorderA, fg V.green),
               ( foldedReasoningA,
                 (V.brightCyan `on` V.Color240 (240 - 16))
+                  { V.attrStyle = V.SetTo V.bold
+                  }
+              ),
+              ( foldedToolResultA,
+                (V.brightRed `on` V.Color240 (240 - 16))
                   { V.attrStyle = V.SetTo V.bold
                   }
               )
@@ -391,7 +396,7 @@ handleEvent ev = do
         invalidateCache
       (VtyEvent (V.EvKey (V.KChar '\t') [])) -> do
         let focus = st.timeline.focus
-        stateTimelineEntriesL . ix focus . Timeline.displayEntryReasoningFoldedL %= not
+        stateTimelineEntriesL . ix focus . Timeline.displayEntryFoldedL %= not
         invalidateCacheEntry $ NTimelineEntry focus
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
@@ -409,7 +414,8 @@ handleEvent ev = do
           finishTool id' content rest = do
             let entry = Timeline.ToolResultEntry {id = id', content = content}
             zoom stateTimelineL $ do
-              Timeline.stateEntriesL %= (Timeline.mkNewDisplayEntry entry :)
+              -- tool results start folded
+              Timeline.stateEntriesL %= (Timeline.DisplayEntry entry True :)
               Timeline.stickToBottom
             invalidateCache
             statePendingToolsL .= rest
@@ -476,13 +482,13 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
     -- append text to output
     ents <- gets (^. Timeline.stateEntriesL)
     case ents of
-      (Timeline.DisplayEntry {entry = Timeline.OutputEntry prev, reasoningFolded}) : tl -> do
+      (Timeline.DisplayEntry {entry = Timeline.OutputEntry prev, folded}) : tl -> do
         -- When we first get content, fold reasoning
         let foldReasoning = T.null prev.content && not (T.null added.content)
         Timeline.stateEntriesL
           .= ( Timeline.DisplayEntry
                  { entry = Timeline.OutputEntry (prev <> added),
-                   reasoningFolded = reasoningFolded || foldReasoning
+                   folded = folded || foldReasoning
                  }
              )
             : tl

@@ -4,7 +4,7 @@
 module VoidTalon.TUI.Timeline
   ( DisplayEntry (..),
     displayEntryEntryL,
-    displayEntryReasoningFoldedL,
+    displayEntryFoldedL,
     mkNewDisplayEntry,
     State (..),
     initialState,
@@ -27,13 +27,14 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map.Lazy as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
-import Lens.Micro
+import Lens.Micro hiding (folded)
 import Lens.Micro.TH
 import Skylighting as SL
 import VoidTalon.TUI.Markdown (highlightedCode, markdownWidget)
 import VoidTalon.TUI.Types
   ( Name (..),
     foldedReasoningA,
+    foldedToolResultA,
     selectedA,
     systemPromptBorderA,
     toolResultBorderA,
@@ -46,12 +47,12 @@ import VoidTalon.Util (editInEditor)
 
 data DisplayEntry = DisplayEntry
   { entry :: TL.Entry,
-    reasoningFolded :: Bool
+    folded :: Bool
   }
 
 makeLensesFor
   [ ("entry", "displayEntryEntryL"),
-    ("reasoningFolded", "displayEntryReasoningFoldedL")
+    ("folded", "displayEntryFoldedL")
   ]
   ''DisplayEntry
 
@@ -97,7 +98,7 @@ entryWidget
   sel
   DisplayEntry
     { entry = TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls),
-      reasoningFolded
+      folded
     } =
     applyWhen sel (withAttr selectedA) inner
     where
@@ -108,7 +109,7 @@ entryWidget
           ++ (toolsWidget <$> IntMap.elems toolCalls)
 
       reasoningWidget =
-        if reasoningFolded
+        if folded
           then withAttr foldedReasoningA $ txt "[Reasoning]"
           else borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
       replyWidget = markdownWidget "reply" reply
@@ -119,10 +120,13 @@ entryWidget
             highlightedCode jsonSyntax parameters
 
       jsonSyntax = SL.defaultSyntaxMap Map.! "JSON"
-entryWidget sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}} =
-  applyWhen sel (withAttr selectedA) inner
+entryWidget sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}, folded} =
+  applyWhen sel (forceAttr selectedA) inner
   where
-    inner = overrideAttr borderAttr toolResultBorderA $ messageWidget $ txtWrap content
+    inner =
+      if folded
+        then padLeft Max $ withAttr foldedToolResultA $ txt "[Tool Result]"
+        else overrideAttr borderAttr toolResultBorderA $ messageWidget $ txtWrap content
 
 draw ::
   -- | True iff the timeline is currently focused

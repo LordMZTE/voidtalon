@@ -16,6 +16,7 @@ module VoidTalon.TUI.Types
     toolManagerSchemaKeyA,
     systemPromptBorderA,
     foldedReasoningA,
+    foldedToolResultA,
     bakedWidget,
     overlaySizeLimitPercent,
     PopupContext (..),
@@ -137,6 +138,10 @@ systemPromptBorderA = attrName "systemPromptBorder"
 -- | Attribute name for the reasoning block when it's folded
 foldedReasoningA :: AttrName
 foldedReasoningA = attrName "foldedReasoning"
+
+-- | Attribute name for tool results when they're folded
+foldedToolResultA :: AttrName
+foldedToolResultA = attrName "foldedToolResult"
 
 -- | Utility to "un-render" a widget.  Useful if we need to know the size of the widget for some
 -- surrounding context that the widget is then drawn into
