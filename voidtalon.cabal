@@ -35,6 +35,7 @@ executable vt
       VoidTalon.TUI
       VoidTalon.TUI.ConnectionSelector
       VoidTalon.TUI.Help
+      VoidTalon.TUI.Icons
       VoidTalon.TUI.Markdown
       VoidTalon.TUI.ModelSelector
       VoidTalon.TUI.PromptLibrary

@@ -46,6 +46,7 @@ import Graphics.Vty.Attributes (MaybeDefault (SetTo))
 import Lens.Micro
 import qualified Skylighting as SL
 import VoidTalon.Markdown as M
+import VoidTalon.TUI.Icons (bullet)
 import qualified VoidTalon.TUI.Types as TT
 
 codeAttr :: Attr -> Attr
@@ -125,10 +126,10 @@ docWidget = vBox . widgs
     widgs (DocList t xs) =
       uncurry (<+>) <$> rows
       where
-        bullet = txt "• "
+        bulletWidget = str $ bullet : " "
         rows :: [(Widget a, Widget a)]
         rows = case t of
-          BulletList _ -> (\d -> (bullet, docWidget d)) <$> xs
+          BulletList _ -> (\d -> (bulletWidget, docWidget d)) <$> xs
           OrderedList start _ _ ->
             (\(n, d) -> (str $ (show n) <> ". ", docWidget d))
               <$> zip [start ..] xs

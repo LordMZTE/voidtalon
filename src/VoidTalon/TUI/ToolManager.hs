@@ -28,6 +28,7 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema (..), SchemaType)
+import VoidTalon.TUI.Icons (circleEmpty, circleFilled)
 import VoidTalon.TUI.Types
   ( Event (EvClosePopup),
     Name (NToolManagerEntry, NToolManagerVP),
@@ -152,4 +153,5 @@ drawState selected (enabled, name, Tools.Tool {description = Tools.Description {
         txtWrap description
       ]
   where
-    check = if enabled then "● " else "○ "
+    check :: T.Text
+    check = T.pack $ (if enabled then circleFilled else circleEmpty) : " "
