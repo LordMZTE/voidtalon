@@ -22,6 +22,7 @@ import Control.Exception (AsyncException (ThreadKilled), Exception (fromExceptio
 import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
+import Data.Bits ((.|.))
 import Data.Either (partitionEithers)
 import Data.Foldable (find)
 import qualified Data.IntMap.Strict as IntMap
@@ -52,7 +53,7 @@ import qualified VoidTalon.TUI.ToolManager as TM
 import VoidTalon.TUI.Types
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Tools as Tools
-import VoidTalon.Tools.BuiltIn (builtinTools)
+import VoidTalon.Tools.BuiltIn (builtinGroup)
 import VoidTalon.Util (BufferedBChan, remove)
 import qualified VoidTalon.Util as Util
 
@@ -132,14 +133,14 @@ mkInitialState config configDir evchan httpMan mcps = do
         stats = Completions.emptyStats,
         pendingTools = [],
         openPopup = Nothing,
-        tools = TM.newManager tools,
+        tools = TM.newManager toolGroups,
         currentError = Nothing,
         connections = CS.newSelector config.connections,
         promptLibrary = PL.newLibrary configDir mcps,
         reasoningEffort = RE.newSelector
       }
   where
-    tools = builtinTools ++ (concatMap (.tools) mcps)
+    toolGroups = builtinGroup : (MCP.serverToolGroup <$> mcps)
 
 type App' = App State [Event] Name
 
@@ -163,6 +164,11 @@ app =
               (toolResultBorderA, fg V.red),
               (toolPlanHeaderA, (fg V.magenta) {V.attrStyle = V.SetTo V.bold}),
               (toolManagerToolTitleA, (fg V.cyan) {V.attrStyle = V.SetTo V.bold}),
+              ( toolManagerToolGroupTitleA,
+                (fg V.magenta)
+                  { V.attrStyle = V.SetTo $ V.bold .|. V.underline
+                  }
+              ),
               ( toolManagerSchemaTypeA,
                 (V.red `on` (V.Color240 $ 235 - 16))
                   { V.attrStyle = V.SetTo V.bold

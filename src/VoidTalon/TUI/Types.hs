@@ -12,6 +12,7 @@ module VoidTalon.TUI.Types
     toolResultBorderA,
     toolPlanHeaderA,
     toolManagerToolTitleA,
+    toolManagerToolGroupTitleA,
     toolManagerSchemaTypeA,
     toolManagerSchemaKeyA,
     systemPromptBorderA,
@@ -122,6 +123,10 @@ toolPlanHeaderA = attrName "toolPlanHeader"
 -- | Attribute name used for the titles of tools in the tool manager
 toolManagerToolTitleA :: AttrName
 toolManagerToolTitleA = attrName "toolManagerToolTitle"
+
+-- | Attribute name used for the titles of tool groups in the tool manager
+toolManagerToolGroupTitleA :: AttrName
+toolManagerToolGroupTitleA = attrName "toolManagerToolGroupTitle"
 
 -- | Attribute name used for the types shown in the tool manager's schema preview
 toolManagerSchemaTypeA :: AttrName

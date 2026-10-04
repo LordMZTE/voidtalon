@@ -10,6 +10,7 @@ module VoidTalon.Net.MCP
     connectHTTP,
     Server (..),
     performInitialization,
+    serverToolGroup,
     module VoidTalon.Net.MCP.Types,
   )
 where
@@ -27,6 +28,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Data.Foldable (find, toList)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Network.HTTP.Client (httpNoBody)
 import qualified Network.HTTP.Client as HTTP
@@ -263,3 +265,12 @@ jsonPlan p (String txt) = [(p, txt)]
 jsonPlan p (Number n) = [(p, T.show n)]
 jsonPlan p (Bool b) = [(p, T.show b)]
 jsonPlan p Null = [(p, "null")]
+
+serverToolGroup :: Server -> Tools.Group
+serverToolGroup Server {tools, serverInfo = ServerInfo {name, title, description}} =
+  Tools.Group
+    { opened = False,
+      name = fromMaybe name title,
+      description,
+      states = uncurry Tools.mkState <$> tools
+    }

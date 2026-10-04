@@ -1,5 +1,6 @@
 module VoidTalon.TUI.Icons
   ( circleFilled,
+    circleHalf,
     circleEmpty,
     foldOpen,
     foldClosed,
@@ -9,6 +10,9 @@ where
 
 circleFilled :: Char
 circleFilled = '●'
+
+circleHalf :: Char
+circleHalf = '◐'
 
 circleEmpty :: Char
 circleEmpty = '○'

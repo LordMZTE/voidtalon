@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module VoidTalon.Tools
   ( NamedDescription (..),
@@ -10,6 +11,11 @@ module VoidTalon.Tools
     CallID,
     Call (..),
     postProcessToolOutput,
+    State,
+    mkState,
+    Group (..),
+    groupOpenedL,
+    groupStatesL,
   )
 where
 
@@ -18,6 +24,7 @@ import Data.Aeson hiding (toEncoding)
 import Data.Aeson.Encoding (pair)
 import Data.Char (isSpace)
 import qualified Data.Text as T
+import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema, ToJSONEncoding (..))
 
 -- | A description that tells the LLM what this tool does and how to use it.
@@ -85,3 +92,27 @@ postProcessToolOutput = \case
   res | T.null res -> "<no tool output>"
   res | T.all isSpace res -> "<only whitespace in tool output>"
   res -> res
+
+-- | Current state of a registered tool.
+-- (enabled, name, tool)
+type State = (Bool, T.Text, Tool)
+
+-- | Constructs an initial state from a name and tool, with it being disabled.
+mkState :: T.Text -> Tool -> State
+mkState name tool = (False, name, tool)
+
+-- | A group of tools.  We use one for built-in tools and one per MCP server.
+-- type ToolGroup = (Bool, T.Text, [ToolState])
+data Group = Group
+  { -- | If this group is folded or opened in the tool manager UI
+    opened :: Bool,
+    name :: T.Text,
+    description :: Maybe T.Text,
+    states :: ![State]
+  }
+
+makeLensesFor
+  [ ("opened", "groupOpenedL"),
+    ("states", "groupStatesL")
+  ]
+  ''Group
