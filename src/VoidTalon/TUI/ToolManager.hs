@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module VoidTalon.TUI.ToolManager
@@ -14,7 +15,6 @@ where
 import Brick
 import Brick.Widgets.Border (vBorder)
 import Brick.Widgets.List (listSelectedAttr)
-import Control.Arrow ((&&&))
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (runIdentity))
 import Control.Monad.State (State, execState)
@@ -31,7 +31,7 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH (makeLensesFor)
 import VoidTalon.JSON (Schema (..), SchemaType)
-import VoidTalon.TUI.Icons (circleEmpty, circleFilled, foldClosed, foldOpen)
+import VoidTalon.TUI.Icons (circleEmpty, circleFilled, diamondEmpty, diamondFilled, foldClosed, foldOpen)
 import qualified VoidTalon.TUI.Icons as Icons
 import VoidTalon.TUI.Types
   ( Event (EvClosePopup),
@@ -43,7 +43,6 @@ import VoidTalon.TUI.Types
     toolManagerToolTitleA,
   )
 import qualified VoidTalon.Tools as Tools
-import VoidTalon.Util (focusAdd, focusSub)
 import qualified VoidTalon.Util as Util
 
 data Manager = Manager
@@ -114,9 +113,6 @@ listEntryCount = foldl' (\a g -> a + groupEntryCount g) 0
     groupEntryCount :: Tools.Group -> Int
     groupEntryCount Tools.Group {opened, states} = if opened then length states + 1 else 1
 
-allEnabled :: Tools.Group -> Bool
-allEnabled Tools.Group {states} = all (^. _1) states
-
 -- | Create a new manager that knows about the given tools
 newManager :: [Tools.Group] -> Manager
 newManager groups =
@@ -129,37 +125,27 @@ newManager groups =
 -- completions context directly.
 activeTools :: Manager -> [(T.Text, Tools.Description)]
 activeTools Manager {groups} =
-  (\(_, name, tool) -> (name, tool.description))
-    <$> filter (^. _1) (allStates groups)
+  (\Tools.State {name, tool} -> (name, tool.description))
+    <$> filter (.enabled) (allStates groups)
 
 -- | Searches the currently active tools for one of the given name.
-findTool :: Manager -> T.Text -> Maybe Tools.Tool
-findTool Manager {groups} name =
-  (\(_, _, t) -> t) <$> find (\(enabled, n, _) -> enabled && n == name) (allStates groups)
+findTool :: Manager -> T.Text -> Maybe Tools.State
+findTool Manager {groups} n =
+  find (\Tools.State {enabled, name} -> enabled && n == name) (allStates groups)
 
 handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Manager ()
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'j') [])) = do
   m <- get
-  let sel = focusAdd (listEntryCount m.groups) m.selected
+  let sel = Util.focusAdd (listEntryCount m.groups) m.selected
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
 handleEvent _ (VtyEvent (V.EvKey (V.KChar 'k') [])) = do
   m <- get
-  let sel = focusSub (listEntryCount m.groups) m.selected
+  let sel = Util.focusSub (listEntryCount m.groups) m.selected
   managerSelectedL .= sel
   makeVisible $ NToolManagerEntry sel
-handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = do
-  sel <- gets (.selected)
-  managerGroupsL %= applyToSelected sel toggleGroup toggleTool
-  where
-    toggleGroup :: Tools.Group -> Tools.Group
-    toggleGroup group@Tools.Group {states} =
-      -- When all tools are enabled, disable all, otherwise enable all.
-      let allEnabled' = allEnabled group
-          states' = states & each . _1 .~ not allEnabled'
-       in group {Tools.states = states'}
-    toggleTool :: Tools.State -> Tools.State
-    toggleTool = _1 %~ not
+handleEvent _ (VtyEvent (V.EvKey (V.KChar ' ') [])) = toggleSelectedProperty Tools.stateEnabledL
+handleEvent _ (VtyEvent (V.EvKey (V.KChar 'a') [])) = toggleSelectedProperty Tools.stateAutoconfirmL
 handleEvent _ (VtyEvent (V.EvKey (V.KChar '\t') [])) = do
   sel <- gets (.selected)
   managerGroupsL %= applyToSelected sel foldGroup id
@@ -190,7 +176,7 @@ draw Manager {groups, selected} = hBox [list, vBorder, schemaView]
 
     schemaView = case getSelected selected groups of
       Just (Left Tools.Group {description}) -> txtWrap $ fromMaybe "<no description>" description
-      Just (Right (_, _, Tools.Tool {description})) -> schemaWidget description.schema
+      Just (Right Tools.State {tool = Tools.Tool {description}}) -> schemaWidget description.schema
       Nothing -> emptyWidget
 
     typeWidget :: [SchemaType] -> Widget n
@@ -230,23 +216,47 @@ draw Manager {groups, selected} = hBox [list, vBorder, schemaView]
 
 drawTitle :: Tools.Group -> Widget n
 drawTitle Tools.Group {opened, name, states} =
-  withAttr toolManagerToolGroupTitleA $ txt $ mconcat [arrow, " ", icon, " ", name]
+  withAttr toolManagerToolGroupTitleA . txt $
+    mconcat [arrow, " ", enabledIcon, " ", autoconfirmIcon, " ", name]
   where
-    icon =
-      let foldFound (haveT, noF) (enabled, _, _) = ((haveT ||) &&& (noF &&)) enabled
-       in T.singleton $ case foldl' foldFound (False, True) states of
-            (True, False) -> Icons.circleHalf
-            (True, True) -> Icons.circleFilled
-            (False, _) -> Icons.circleEmpty
     arrow = T.singleton $ if opened then foldOpen else foldClosed
+    enabledIcon = T.singleton $ case Util.classifyCount (.enabled) states of
+      Util.CCSome -> Icons.circleHalf
+      Util.CCAll -> Icons.circleFilled
+      Util.CCNone -> Icons.circleEmpty
+    autoconfirmIcon = T.singleton $ case Util.classifyCount (.autoconfirm) states of
+      Util.CCSome -> Icons.diamondHalf
+      Util.CCAll -> Icons.diamondFilled
+      Util.CCNone -> Icons.diamondEmpty
 
 drawState :: Tools.State -> Widget n
-drawState (enabled, name, Tools.Tool {description = Tools.Description {description}}) =
-  txt "  "
-    <+> vBox
-      [ withAttr toolManagerToolTitleA $ txt $ mconcat [check, name],
-        txtWrap description
-      ]
+drawState
+  Tools.State
+    { enabled,
+      autoconfirm,
+      name,
+      tool = Tools.Tool {description = Tools.Description {description}}
+    } =
+    txt "  "
+      <+> vBox
+        [ withAttr toolManagerToolTitleA . txt $
+            mconcat [enabledIcon, " ", autoconfirmIcon, " ", name],
+          txtWrap description
+        ]
+    where
+      enabledIcon = T.singleton $ if enabled then circleFilled else circleEmpty
+      autoconfirmIcon = T.singleton $ if autoconfirm then diamondFilled else diamondEmpty
+
+toggleSelectedProperty :: Lens' Tools.State Bool -> EventM Name Manager ()
+toggleSelectedProperty l = do
+  sel <- gets (.selected)
+  managerGroupsL %= applyToSelected sel toggleGroup toggleTool
   where
-    check :: T.Text
-    check = T.pack $ (if enabled then circleFilled else circleEmpty) : " "
+    toggleGroup :: Tools.Group -> Tools.Group
+    toggleGroup group@Tools.Group {states} =
+      -- When all tools are enabled, disable all, otherwise enable all.
+      let allEnabled = all (^. l) group.states
+          states' = states & each . l .~ not allEnabled
+       in group {Tools.states = states'}
+    toggleTool :: Tools.State -> Tools.State
+    toggleTool = l %~ not

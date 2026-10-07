@@ -62,6 +62,7 @@ helpText =
       "k/j          Move selection up/down",
       "<Space>      Enable/disable tool or all in group",
       "<Tab>        Open/close group",
+      "a            Toggle autoconfirm for tool or all in group",
       "",
       "== Model Selector ==",
       "k/j/g/G/...  Move selection",

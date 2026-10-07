@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module VoidTalon.Util
@@ -19,11 +20,14 @@ module VoidTalon.Util
     blockWriteBufferedBChanAllRev,
     spacerWidget,
     singleSpacer,
+    CountClass (..),
+    classifyCount,
   )
 where
 
 import Brick (Result (..), Size (Fixed), Widget (..), emptyResult)
 import Brick.BChan (BChan, newBChan, writeBChan, writeBChanNonBlocking)
+import Control.Arrow ((&&&))
 import Control.Concurrent (MVar, modifyMVar_, newMVar)
 import Control.Exception (finally)
 import Control.Monad (replicateM)
@@ -185,3 +189,15 @@ spacerWidget width height =
 -- | A widget that takes up one char of space.
 singleSpacer :: Widget n
 singleSpacer = spacerWidget (1 :: Int) 1
+
+data CountClass = CCNone | CCSome | CCAll
+
+classifyCount :: (Foldable t) => (a -> Bool) -> t a -> CountClass
+classifyCount predicate =
+  \case
+    (True, False) -> CCSome
+    (True, True) -> CCAll
+    (False, _) -> CCNone
+    . foldl' foldFound (False, True)
+  where
+    foldFound (haveT, noF) = ((haveT ||) &&& (noF &&)) . predicate

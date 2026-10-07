@@ -11,7 +11,9 @@ module VoidTalon.Tools
     CallID,
     Call (..),
     postProcessToolOutput,
-    State,
+    State (..),
+    stateEnabledL,
+    stateAutoconfirmL,
     mkState,
     Group (..),
     groupOpenedL,
@@ -95,11 +97,22 @@ postProcessToolOutput = \case
 
 -- | Current state of a registered tool.
 -- (enabled, name, tool)
-type State = (Bool, T.Text, Tool)
+data State = State
+  { enabled :: Bool,
+    autoconfirm :: Bool,
+    name :: T.Text,
+    tool :: Tool
+  }
+
+makeLensesFor
+  [ ("enabled", "stateEnabledL"),
+    ("autoconfirm", "stateAutoconfirmL")
+  ]
+  ''State
 
 -- | Constructs an initial state from a name and tool, with it being disabled.
 mkState :: T.Text -> Tool -> State
-mkState name tool = (False, name, tool)
+mkState name tool = State {enabled = False, autoconfirm = False, name, tool}
 
 -- | A group of tools.  We use one for built-in tools and one per MCP server.
 -- type ToolGroup = (Bool, T.Text, [ToolState])

@@ -35,7 +35,7 @@ want to work and then run `vt`. There is no noticable delay in startup.
     - [x] MCP over stdio and HTTP
     - [x] A small, no-nonsense collection of built-in tools (see below)
     - [x] Toggling of individual tools, schema and description viewer
-    - [x] User confirmation dialog for all tool calls
+    - [x] User confirmation dialog for all tool calls by default, autoconfirm for configured tools
     - [x] Manually spoofing tool responses
     - [x] Managing tools, each tool can be individiually enabled and disabled, schema and
           description are shown

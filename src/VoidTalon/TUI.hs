@@ -23,10 +23,9 @@ import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits ((.|.))
-import Data.Either (partitionEithers)
 import Data.Foldable (find)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
@@ -57,6 +56,10 @@ import VoidTalon.Tools.BuiltIn (builtinGroup)
 import VoidTalon.Util (BufferedBChan, remove)
 import qualified VoidTalon.Util as Util
 
+type ResolvedCall = (Tools.CallID, T.Text, Tools.Invocation)
+
+type PendingTools = (ResolvedCall, [Tools.Call])
+
 data State = State
   { config :: Config,
     -- | The connection currently being used.
@@ -73,8 +76,8 @@ data State = State
     runState :: RunState,
     stats :: Completions.TokenStats,
     -- | Tools that the model requested but the user hasn't reviewed yet.
-    -- (id, name, invocation)
-    pendingTools :: [(Tools.CallID, T.Text, Tools.Invocation)],
+    -- (first tool (id, name, invocation), other unprocessed tools)
+    pendingTools :: Maybe PendingTools,
     openPopup :: Maybe Name,
     tools :: TM.Manager,
     currentError :: Maybe String,
@@ -131,7 +134,7 @@ mkInitialState config configDir evchan httpMan mcps = do
         lastStopReason = Nothing,
         runState = RunStateStopped "stop",
         stats = Completions.emptyStats,
-        pendingTools = [],
+        pendingTools = Nothing,
         openPopup = Nothing,
         tools = TM.newManager toolGroups,
         currentError = Nothing,
@@ -197,7 +200,7 @@ app =
 effectiveFocus :: State -> Maybe Name
 effectiveFocus st =
   (const NErrorPopup <$> st.currentError)
-    <|> (listToMaybe st.pendingTools >> Just NToolDialog)
+    <|> (st.pendingTools >> Just NToolDialog)
     <|> st.openPopup
     <|> (focusGetCurrent st.focus)
 
@@ -214,7 +217,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
             $ strWrap e
         Nothing -> []
         ++ case st.pendingTools of
-          (_, name, (plan, _)) : _ ->
+          Just ((_, name, (plan, _)), []) ->
             let entry hdr t = [withAttr toolPlanHeaderA $ txtWrap hdr, border $ txtWrap t]
                 boxWidgets = concatMap (uncurry entry) plan
              in pure
@@ -289,7 +292,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar ch) [V.MCtrl]))
       st <- get
       vScrollBy (vpFor st) $ -1
   where
-    vpFor State {pendingTools = []} = Timeline.outputVPScroll
+    vpFor State {pendingTools = Nothing} = Timeline.outputVPScroll
     vpFor _ = toolDialogVPScroll
 -- Change focus with <C-w>
 handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
@@ -306,12 +309,12 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'w') [V.MCtrl])) = do
 handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
   st <- get
   case st.runState of
-    RunStateStopped _ ->
-      unless (null st.pendingTools) $
-        statePendingToolsL .= []
+    RunStateStopped _ -> do
+      statePendingToolsL .= Nothing
+      stateRunStateL .= runStateCancelled
     RunStateRunning thread -> do
       liftIO $ killThread thread
-      stateRunStateL .= RunStateStopped "cancelled"
+      stateRunStateL .= runStateCancelled
 handleEvent (VtyEvent (V.EvKey (V.KFun 1) [])) = openPopup NHelp
 handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManager
 handleEvent (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
@@ -415,28 +418,19 @@ handleEvent ev = do
       let finishTool ::
             Tools.CallID ->
             T.Text ->
-            [(Maybe T.Text, T.Text, Tools.Invocation)] ->
+            [Tools.Call] ->
             EventM Name State ()
           finishTool id' content rest = do
-            let entry = Timeline.ToolResultEntry {id = id', content = content}
-            zoom stateTimelineL $ do
-              -- tool results start folded
-              Timeline.stateEntriesL %= (Timeline.DisplayEntry entry True :)
-              Timeline.stickToBottom
-            invalidateCache
-            statePendingToolsL .= rest
-            when (null rest) $ startCompletions
+            appendToolResult id' content
+            advanceTools rest >>= (statePendingToolsL .=)
        in case (st.pendingTools, ev) of
-            ((id', _, (_, invoke)) : rest, VtyEvent (V.EvKey (V.KChar 'y') [])) -> do
-              result <-
-                suspendAndResume' $
-                  try invoke <&> \case
-                    Left err -> T.pack $ "Error: " <> (show (err :: SomeException))
-                    Right res -> Tools.postProcessToolOutput res
+            (Nothing, _) -> undefined -- We shouldn't have made it here if there are no pending tools
+            (Just ((id', _, (_, invoke)), rest), VtyEvent (V.EvKey (V.KChar 'y') [])) -> do
+              result <- executeTool invoke
               finishTool id' result rest
-            ((id', _, _) : rest, VtyEvent (V.EvKey (V.KChar 'n') [])) ->
+            (Just ((id', _, _), rest), VtyEvent (V.EvKey (V.KChar 'n') [])) ->
               finishTool id' "Error: user denied tool invocation" rest
-            ((id', _, _) : rest, VtyEvent (V.EvKey (V.KChar 's') [])) -> do
+            (Just ((id', _, _), rest), VtyEvent (V.EvKey (V.KChar 's') [])) -> do
               result <- suspendAndResume' (Util.editInEditor "md" LT.empty)
               finishTool id' (LT.toStrict result) rest
             _ -> pure ()
@@ -517,34 +511,9 @@ handleAppEvent EvCompletionDone = do
       s
     RunStateRunning _ -> (RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason))
   case (.entry) <$> st ^. stateTimelineEntriesL of
-    ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) -> do
-      let (brokenCalls, calls) = partitionEithers $ prepareInvocation st <$> IntMap.elems toolCalls
-      -- Append broken calls to timeline right away
-      zoom stateTimelineL $ do
-        Timeline.stateEntriesL
-          %= ( ( Timeline.mkNewDisplayEntry
-                   . uncurry Timeline.ToolResultEntry
-                   . (("Error: " <>) . T.pack <$>)
-                   <$> brokenCalls
-               )
-                 ++
-             )
-        Timeline.stickToBottom
-      -- Schedule valid calls for review
-      statePendingToolsL .= calls
-      invalidateCache -- index shift
+    ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) ->
+      advanceTools (IntMap.elems toolCalls) >>= (statePendingToolsL .=)
     _ -> pure ()
-  where
-    prepareInvocation ::
-      State ->
-      Tools.Call ->
-      Either (Tools.CallID, String) (Tools.CallID, T.Text, Tools.Invocation)
-    prepareInvocation st Tools.Call {id = id', name, parameters} =
-      case TM.findTool st.tools name of
-        Just (Tools.Tool {invoke}) -> case invoke parameters of
-          Left err -> Left (id', err)
-          Right res -> Right (id', name, res)
-        Nothing -> Left (id', "No such tool exists")
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing
 handleAppEvent (EvModelList ms) = zoom stateModelsL $ MS.modelsReceived ms
@@ -581,3 +550,41 @@ appendEditorContent mkEnt = do
 
 toolDialogVPScroll :: ViewportScroll Name
 toolDialogVPScroll = viewportScroll NToolDialog
+
+advanceTools :: [Tools.Call] -> EventM Name State (Maybe PendingTools)
+advanceTools [] = do
+  startCompletions
+  pure Nothing
+advanceTools (Tools.Call {id = id', name, parameters} : rest) = do
+  st <- get
+  case TM.findTool st.tools name of
+    Just (Tools.State {autoconfirm, tool = Tools.Tool {invoke}}) -> case invoke parameters of
+      Left err -> do
+        appendToolResult id' ("Error: " <> T.pack err)
+        advanceTools rest
+      Right invocation@(_, invoke') ->
+        if autoconfirm
+          then do
+            res <- executeTool invoke'
+            appendToolResult id' res
+            advanceTools rest
+          else pure $ Just ((id', name, invocation), rest)
+    Nothing -> do
+      appendToolResult id' "Error: No such tool exists"
+      advanceTools rest
+
+appendToolResult :: Tools.CallID -> T.Text -> EventM Name State ()
+appendToolResult id' content = do
+  let entry = Timeline.ToolResultEntry id' content
+  zoom stateTimelineL $ do
+    -- tool results start folded
+    Timeline.stateEntriesL %= (Timeline.DisplayEntry entry True :)
+    Timeline.stickToBottom
+  invalidateCache -- index shift
+
+executeTool :: (IO T.Text) -> EventM Name State T.Text
+executeTool invoke =
+  suspendAndResume' $
+    try invoke <&> \case
+      Left err -> T.pack $ "Error: " <> (show (err :: SomeException))
+      Right res -> Tools.postProcessToolOutput res

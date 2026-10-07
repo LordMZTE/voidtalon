@@ -1,7 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module VoidTalon.TUI.Types
   ( Event (..),
     Name (..),
     RunState (..),
+    runStateCancelled,
     isRunning,
     isStopped,
     warningA,
@@ -84,6 +87,9 @@ data Name
 data RunState
   = RunStateStopped T.Text -- Stopped with reason
   | RunStateRunning ThreadId -- Running with given completions thread
+
+runStateCancelled :: RunState
+runStateCancelled = RunStateStopped "cancelled"
 
 isRunning :: RunState -> Bool
 isRunning (RunStateStopped _) = False

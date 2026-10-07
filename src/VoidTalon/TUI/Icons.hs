@@ -2,6 +2,9 @@ module VoidTalon.TUI.Icons
   ( circleFilled,
     circleHalf,
     circleEmpty,
+    diamondFilled,
+    diamondHalf,
+    diamondEmpty,
     foldOpen,
     foldClosed,
     bullet,
@@ -16,6 +19,15 @@ circleHalf = '◐'
 
 circleEmpty :: Char
 circleEmpty = '○'
+
+diamondFilled :: Char
+diamondFilled = '◆'
+
+diamondHalf :: Char
+diamondHalf = '⬖'
+
+diamondEmpty :: Char
+diamondEmpty = '◇'
 
 foldOpen :: Char
 foldOpen = '▼'
