@@ -512,7 +512,8 @@ handleAppEvent EvCompletionDone = do
     RunStateRunning _ -> (RunStateStopped (fromMaybe "<unknown stop>" st.lastStopReason))
   case (.entry) <$> st ^. stateTimelineEntriesL of
     ((Timeline.OutputEntry Timeline.LLMMessage {toolCalls}) : _) ->
-      advanceTools (IntMap.elems toolCalls) >>= (statePendingToolsL .=)
+      unless (st.runState == runStateCancelled || null toolCalls) $
+        advanceTools (IntMap.elems toolCalls) >>= (statePendingToolsL .=)
     _ -> pure ()
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing

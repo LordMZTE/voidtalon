@@ -34,7 +34,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config, ConnectionConfig)
-import VoidTalon.Net.Completions (Update (UpdateMessage), ReasoningEffort)
+import VoidTalon.Net.Completions (ReasoningEffort, Update (UpdateMessage))
 import VoidTalon.Net.Models (ModelInfo)
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
@@ -87,6 +87,7 @@ data Name
 data RunState
   = RunStateStopped T.Text -- Stopped with reason
   | RunStateRunning ThreadId -- Running with given completions thread
+  deriving (Eq)
 
 runStateCancelled :: RunState
 runStateCancelled = RunStateStopped "cancelled"
