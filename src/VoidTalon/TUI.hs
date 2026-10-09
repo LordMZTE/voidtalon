@@ -484,7 +484,9 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
     case ents of
       (Timeline.DisplayEntry {entry = Timeline.OutputEntry prev, folded}) : tl -> do
         -- When we first get content, fold reasoning
-        let foldReasoning = T.null prev.content && not (T.null added.content)
+        let hasEmptyContent Timeline.LLMMessage {content, toolCalls} =
+              T.null content && IntMap.null toolCalls
+            foldReasoning = hasEmptyContent prev && not (hasEmptyContent added)
         Timeline.stateEntriesL
           .= ( Timeline.DisplayEntry
                  { entry = Timeline.OutputEntry (prev <> added),
