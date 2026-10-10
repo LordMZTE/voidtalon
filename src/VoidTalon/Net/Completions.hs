@@ -7,7 +7,6 @@ module VoidTalon.Net.Completions
     Context (..),
     Update (..),
     TokenStats (..),
-    emptyStats,
   )
 where
 
@@ -63,7 +62,7 @@ perform evchan conf http ctx = do
     handleResponse :: Response BodyReader -> IO ()
     handleResponse res = do
       checkStatusOK res
-      SSE.readStream res.responseBody $ \SSE.Event {content} ->
+      SSE.readStream res.responseBody $ \SSE.Event {content} -> do
         if content == "[DONE]"
           then pure ()
           else case decode content of
@@ -107,6 +106,9 @@ instance ToJSONEncoding Context where
           -- This is regarding token timings - a llama.cpp extension that also supersedes the
           -- include_usage setting above, but we use that as a fallback.
           "timings_per_token" .= True,
+          -- This enables a llama.cpp extension that makes the API return prompt processing
+          -- progress.
+          "return_progress" .= True,
           pair "messages" (list encodeEntry timeline),
           pair "tools" (list encodeTool tools)
         ]
@@ -149,47 +151,67 @@ data Update
   = UpdateMessage {delta :: LLMMessage, stats :: TokenStats}
   | UpdateStop {reason :: T.Text}
 
-data TokenStats = TokenStats
-  { -- | Number of tokens in the prompt
-    nPrompt :: Word,
-    -- | Number of tokens generated
-    nCompletion :: Word,
-    -- | Tokens per second (llama.cpp only).  This must be non-negative (because otherwise, we don't
-    -- hold up the neutral element monoid law)
-    tps :: Float
-  }
+data TokenStats
+  = -- | Server didn't send any usable token statistics yet
+    TokenStatsEmpty
+  | -- | Prompt processing token statistics, only supported on llama.cpp.
+    TokenStatsProcess
+      { total :: Word,
+        processed :: Word,
+        tps :: Float
+      }
+  | -- | Output generation token statistics.
+    TokenStatsGen
+      { -- | Number of tokens in the prompt
+        nPrompt :: Word,
+        -- | Number of tokens generated
+        nCompletion :: Word,
+        -- | Number of tokens in the context window
+        nCtx :: Word,
+        -- | Tokens per second (llama.cpp only).  This must be non-negative (because otherwise, we don't
+        -- hold up the neutral element monoid law)
+        tps :: Float
+      }
   deriving (Eq)
 
--- | Stats to be used when the actual data is unknown
-emptyStats :: TokenStats
-emptyStats = TokenStats {nPrompt = 0, nCompletion = 0, tps = 0.0}
-
 -- | @TokenStats@ is a Semigroup where the associative operation simply returns the second stats,
--- unless those are empty, indicating the API didn't report them.
+-- unless those are empty, indicating the API didn't report them.  We also prefer token generation
+-- stats over prompt processing stats because we don't want to show the latter after we've already
+-- started generating, although the API will probably not produce such data anyways.
 -- This reflects the fact that we assume the second argument to be a more recent update than the
 -- first.
 instance Semigroup TokenStats where
-  a <> b | b == emptyStats = a
+  a <> TokenStatsEmpty = a
+  a@TokenStatsGen {} <> TokenStatsProcess {} = a -- always prefer gen stats over process stats
   _ <> b = b
+
+parseStatsPromptProcessing :: Object -> Parser TokenStats
+parseStatsPromptProcessing v = do
+  promptProgress <- v .: "prompt_progress"
+  timings <- v .: "timings"
+  TokenStatsProcess
+    <$> (promptProgress .: "total")
+    <*> (promptProgress .: "processed")
+    <*> (timings .: "prompt_per_second")
 
 -- | Parse stats from the "usage" object returned by the OAI API
 parseStatsOAI :: Object -> Parser TokenStats
 parseStatsOAI v =
-  TokenStats
+  TokenStatsGen
     <$> (v .: "prompt_tokens")
     <*> (v .: "completion_tokens")
+    <*> (v .: "total_tokens")
     <*> (pure 0) -- tps isn't known
 
 -- | Parse stats from the superior "timings" object returned by Llama.cpp
 parseStatsLlamaCpp :: Object -> Parser TokenStats
-parseStatsLlamaCpp v =
-  TokenStats
-    -- These are given as the number of tokens that has been cached and the rest that was processed
-    -- for this request.  We could consider reporting these individually, but for now, we just sum
-    -- up.
-    <$> (liftA2 (+) (v .: "cache_n") (v .: "prompt_n"))
-    <*> (v .: "predicted_n")
-    <*> (v .: "predicted_per_second")
+parseStatsLlamaCpp v = do
+  -- These are given as the number of tokens that has been cached and the rest that was processed
+  -- for this request.
+  promptN <- liftA2 (+) (v .: "cache_n") (v .: "prompt_n")
+  predictedN <- v .: "predicted_n"
+  TokenStatsGen promptN predictedN (promptN + predictedN)
+    <$> (v .: "predicted_per_second")
 
 data RawUpdate = RawUpdate
   { choices :: [Choice],
@@ -200,13 +222,15 @@ instance FromJSON RawUpdate where
   parseJSON = withObject "RawUpdate" $ \v ->
     RawUpdate
       <$> v .: "choices"
-      <*> (
-            -- try to parse Llama.cpp timings first
-            (v .: "timings" >>= parseStatsLlamaCpp)
+      <*> ( -- try to parse prompt processing timings first
+            -- (this has to go first because llama.cpp stats would parse here as well)
+            parseStatsPromptProcessing v
+              -- ..then try to parse Llama.cpp timings first
+              <|> (v .: "timings" >>= parseStatsLlamaCpp)
               -- ...fall back to OAI metrics
               <|> (v .: "usage" >>= parseStatsOAI)
               -- if all else fails, use empty stats
-              <|> pure emptyStats
+              <|> pure TokenStatsEmpty
           )
 
 data Choice = Choice {stop :: Maybe T.Text, message :: Maybe LLMMessage}

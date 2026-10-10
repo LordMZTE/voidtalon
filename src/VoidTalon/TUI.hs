@@ -133,7 +133,7 @@ mkInitialState config configDir evchan httpMan mcps = do
         timeline = Timeline.initialState,
         lastStopReason = Nothing,
         runState = RunStateStopped "stop",
-        stats = Completions.emptyStats,
+        stats = Completions.TokenStatsEmpty,
         pendingTools = Nothing,
         openPopup = Nothing,
         tools = TM.newManager toolGroups,
@@ -263,16 +263,28 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
         let run = case st.runState of
               RunStateStopped reason -> reason
               RunStateRunning _ -> "running"
-            Completions.TokenStats {tps, nCompletion, nPrompt} = st.stats
-         in mconcat
-              [ T.show nPrompt,
-                " in ",
-                T.show nCompletion,
-                " out ",
-                T.pack $ printf "%.2f" tps,
-                "/s ",
-                run
-              ]
+            statsSegs = case st.stats of
+              Completions.TokenStatsEmpty -> []
+              Completions.TokenStatsProcess {total, processed, tps} ->
+                [ "proc ",
+                  T.show processed,
+                  "/",
+                  T.show total,
+                  " ",
+                  T.show tps,
+                  "/s"
+                ]
+              Completions.TokenStatsGen {nCompletion, nPrompt, nCtx, tps} ->
+                [ T.show nPrompt,
+                  " in ",
+                  T.show nCompletion,
+                  " out ",
+                  T.show nCtx,
+                  " ctx ",
+                  T.pack $ printf "%.2f" tps,
+                  "/s"
+                ]
+         in mconcat $ statsSegs ++ [" ", run]
     showPopup name widget =
       centerLayer
         . hLimitPercent overlaySizeLimitPercent
@@ -482,13 +494,14 @@ startCompletions = do
 
       -- set runStatus to running
       stateRunStateL .= RunStateRunning thread
+      -- reset token stats
+      stateStatsL .= Completions.TokenStatsEmpty
     _ -> pure ()
 
 handleAppEvent :: Event -> EventM Name State ()
 -- TODO: <> on ByteString is slow (O(n)), optimize
 handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
-  -- Avoid zeroing out stats.
-  when (stats /= Completions.emptyStats) $ stateStatsL .= stats
+  stateStatsL %= (<> stats)
   zoom stateTimelineL $ do
     -- append text to output
     ents <- gets (^. Timeline.stateEntriesL)
