@@ -44,6 +44,8 @@ import System.FilePath ((</>))
 import System.Process (callProcess)
 import System.Random.Stateful (globalStdGen, randomRM)
 import qualified Toml.Schema as T
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text.Lazy.Encoding as LT
 
 -- | Replaces all tabs with four spaces.  We do this because feeding tabs to VTY causes
 -- breakage, and it's cheapest to do here where all strings are still short.
@@ -62,8 +64,8 @@ editInEditor ext t = do
       <$> lookupEnv "EDITOR"
   path <- mkTempFile ext
   LT.writeFile path t
-  res <- finally (callProcess editor [path] >> LT.readFile path) (removeFile path)
-  pure res
+  res <- finally (callProcess editor [path] >> LBS.readFile path) (removeFile path)
+  pure $ LT.decodeUtf8 res
 
 -- | Create a name for a temporary file.
 mkTempFile ::

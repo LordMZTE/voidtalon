@@ -4,9 +4,10 @@
 module VoidTalon.Tools.BuiltIn.ReadFile (tool) where
 
 import Data.Aeson hiding (toEncoding)
+import qualified Data.ByteString as BS
 import Data.Char (isSpace)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
+import qualified Data.Text.Encoding as T
 import VoidTalon.JSON
   ( Schema (..),
     SchemaType (SchemaTypeObject, SchemaTypeString),
@@ -51,8 +52,9 @@ invoke val = do
             c | T.null c -> "<empty file>"
             c | T.all isSpace c -> "<only whitespace>"
             c -> c
+            . T.decodeUtf8
         )
-        . TIO.readFile
+        . BS.readFile
 
 tool :: Tool
 tool = Tool {description, invoke}

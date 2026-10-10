@@ -7,9 +7,10 @@ import Control.Exception (bracket, fromException, try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString
+import qualified Data.ByteString as BS
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as TIO
 import qualified Graphics.Vty as Vty
 import qualified Network.HTTP.Client as HTTP
@@ -62,8 +63,8 @@ mainWithLog = do
     CLI.PONone -> pure []
     CLI.POText t -> pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry t]]
     CLI.POFile path -> do
-      content <- TIO.readFile path
-      pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry content]]
+      content <- BS.readFile path
+      pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry $ T.decodeUtf8 content]]
   initState <-
     TUI.mkInitialState
       config
@@ -79,7 +80,7 @@ mainWithLog = do
 readConfig :: FilePath -> IO Text
 readConfig dir = do
   let path = dir </> Config.fileName
-  config_result <- try $ Data.ByteString.readFile path
+  config_result <- try $ BS.readFile path
   case config_result :: Either SomeException ByteString of
     Left err -> case fromException err of
       Just ioe | isDoesNotExistError ioe -> do

@@ -10,9 +10,10 @@ module VoidTalon.PromptLibrary
   )
 where
 
+import qualified Data.ByteString as BS
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
+import qualified Data.Text.Encoding as T
 import System.Directory (Permissions (executable), getPermissions, listDirectory, removeFile)
 import System.Environment (getEnvironment)
 import System.FilePath ((</>))
@@ -54,7 +55,7 @@ evalPrompt (path, exec) info =
       tmpfile <- mkTempFile "txt"
       env' <- getEnvironment
       let env =
-              ("VOIDTALON_OUTPUT", tmpfile)
+            ("VOIDTALON_OUTPUT", tmpfile)
               : ("VOIDTALON_CONNECTION", T.unpack info.connection)
               : catMaybes
                 [ ("VOIDTALON_MODEL",) . T.unpack . (.id) <$> info.model,
@@ -70,9 +71,9 @@ evalPrompt (path, exec) info =
       let spec = (proc path []) {delegate_ctlc = True, env = Just env}
       (Nothing, Nothing, Nothing, pid) <- createProcess spec
       _ <- waitForProcess pid
-      output <- TIO.readFile tmpfile
+      output <- BS.readFile tmpfile
       removeFile tmpfile
-      pure output
-    else TIO.readFile path
+      pure $ T.decodeUtf8 output
+    else T.decodeUtf8 <$> BS.readFile path
   where
     showPricing Pricing {prompt, completion} = mconcat [T.unpack prompt, ";", T.unpack completion]
