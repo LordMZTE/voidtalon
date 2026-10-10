@@ -56,6 +56,7 @@ helpText =
       "y            Confirm",
       "n            Deny",
       "s            Spoof",
+      "a            Confirm and enable autoconfirm for tool",
       "<C-y/e>      Scroll up/down",
       "",
       "== Tool Manager ==",

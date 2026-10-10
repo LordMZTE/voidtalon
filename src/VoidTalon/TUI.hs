@@ -433,6 +433,17 @@ handleEvent ev = do
             (Just ((id', _, _), rest), VtyEvent (V.EvKey (V.KChar 's') [])) -> do
               result <- suspendAndResume' (Util.editInEditor "md" LT.empty)
               finishTool id' (LT.toStrict result) rest
+            (Just ((id', name, (_, invoke)), rest), VtyEvent (V.EvKey (V.KChar 'a') [])) -> do
+              stateToolsL
+                . TM.managerGroupsL
+                . each
+                . Tools.groupStatesL
+                . each
+                . filtered ((name ==) . (.name))
+                . Tools.stateAutoconfirmL
+                .= True
+              result <- executeTool invoke
+              finishTool id' result rest
             _ -> pure ()
     _ -> pure ()
 

@@ -9,6 +9,7 @@ module VoidTalon.TUI.ToolManager
     findTool,
     handleEvent,
     draw,
+    managerGroupsL,
   )
 where
 
