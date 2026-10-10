@@ -1,5 +1,6 @@
-module VoidTalon.CLI (Arguments (..), parser, readArguments) where
+module VoidTalon.CLI (Arguments (..), PromptOption (..), parser, readArguments) where
 
+import qualified Data.Text as T
 import Options.Applicative
 import PackageInfo_voidtalon (synopsis)
 import qualified VoidTalon.Net.MCP as MCP
@@ -7,8 +8,11 @@ import qualified VoidTalon.Net.MCP as MCP
 data Arguments = Arguments
   { config :: Maybe String,
     mcp :: [String],
-    mcpHttp :: [MCP.HTTPConnectionSpec]
+    mcpHttp :: [MCP.HTTPConnectionSpec],
+    prompt :: PromptOption
   }
+
+data PromptOption = PONone | POText T.Text | POFile FilePath
 
 parser :: Parser Arguments
 parser =
@@ -38,6 +42,27 @@ parser =
               <> help "Use an MCP server over HTTP.  May be passed multiple times.  See the wiki for accepted syntax."
           )
       )
+    <*> parserPromptOption
+
+parserPromptOption :: Parser PromptOption
+parserPromptOption =
+  ( POText
+      <$> strOption
+        ( long "prompt"
+            <> short 'p'
+            <> metavar "PROMPT_TEXT"
+            <> help "Use this prompt, then start."
+        )
+  )
+    <|> ( POFile
+            <$> strOption
+              ( long "prompt-file"
+                  <> short 'P'
+                  <> metavar "PROMPT_FILE"
+                  <> help "Read a prompt from this file, then start."
+              )
+        )
+    <|> pure PONone
 
 readArguments :: IO Arguments
 readArguments = execParser $ info (helper <*> parser) (fullDesc <> progDesc synopsis)

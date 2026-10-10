@@ -36,6 +36,7 @@ import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config, ConnectionConfig)
 import VoidTalon.Net.Completions (ReasoningEffort, Update (UpdateMessage))
 import VoidTalon.Net.Models (ModelInfo)
+import qualified VoidTalon.Timeline as Timeline
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
 -- | Our Brick event type for events sent to the TUI
@@ -56,6 +57,9 @@ data Event
   | -- | Sets the content of the prompt editor to the given lines of text.  Used by the prompt
     -- library
     EvFillPromptEditor [T.Text]
+  | -- | Appends entries to the timeline, then starts completion.  Used by the CLI to add initial
+    -- messages.  Entries are in reverse order, as per usual.
+    EvAppendTimelineAndStart [Timeline.Entry]
 
 instance SemiSemigroup Event where
   -- Completion updates are of monoidal shape

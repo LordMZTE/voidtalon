@@ -554,6 +554,10 @@ handleAppEvent (EvConnectionChange c) = do
     zoom stateModelsL $ MS.connectionChanged c
 handleAppEvent (EvFillPromptEditor ls) =
   statePromptEditorL %= (applyEdit $ const $ textZipper ls Nothing)
+handleAppEvent (EvAppendTimelineAndStart ents) = do
+  stateTimelineEntriesL %= ((Timeline.mkNewDisplayEntry <$> ents) ++)
+  zoom stateTimelineL Timeline.stickToBottom
+  startCompletions
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)

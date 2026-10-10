@@ -26,7 +26,8 @@ import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Log as Log
 import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.TUI as TUI
-import VoidTalon.Util (BufferedBChan (ch), newBufferedBChan)
+import qualified VoidTalon.Timeline as Timeline
+import qualified VoidTalon.Util as Util
 
 main :: IO ()
 main =
@@ -56,7 +57,13 @@ mainWithLog = do
         [ startStdioMCPServers args.mcp,
           startHTTPMCPServers httpMan args.mcpHttp
         ]
-  chan <- newBufferedBChan
+  chan <- Util.newBufferedBChan
+  initEvents <- case args.prompt of
+    CLI.PONone -> pure []
+    CLI.POText t -> pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry t]]
+    CLI.POFile path -> do
+      content <- TIO.readFile path
+      pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry content]]
   initState <-
     TUI.mkInitialState
       config
@@ -64,6 +71,7 @@ mainWithLog = do
       chan
       httpMan
       (snd <$> mcps)
+  Util.blockWriteBufferedBChanAllRev chan initEvents
   (_, vty) <- customMainWithDefaultVty (Just chan.ch) TUI.app initState
   Vty.shutdown vty
   sequence_ (MCP.closeConnection . fst <$> mcps)
