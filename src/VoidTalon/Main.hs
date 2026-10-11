@@ -118,7 +118,7 @@ startHTTPMCPServers man = mapM startOne
       pure (mcp, caps)
 
 getStartupEvents :: CLI.Arguments -> FilePath -> IO [TUI.Event]
-getStartupEvents args configDir = catMaybes <$> sequence [systemEvent, promptEvent]
+getStartupEvents args configDir = catMaybes <$> sequence [promptEvent, systemEvent]
   where
     systemEvent :: IO (Maybe TUI.Event)
     systemEvent =
