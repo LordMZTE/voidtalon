@@ -9,7 +9,8 @@ data Arguments = Arguments
   { config :: Maybe String,
     mcp :: [String],
     mcpHttp :: [MCP.HTTPConnectionSpec],
-    prompt :: PromptOption
+    prompt :: PromptOption,
+    system :: Maybe FilePath
   }
 
 data PromptOption = PONone | POText T.Text | POFile FilePath
@@ -30,7 +31,10 @@ parser =
           ( long "mcp"
               <> short 'm'
               <> metavar "COMMAND"
-              <> help "Use an MCP server over stdio.  May be passed multiple times.  Accepts a POSIX shell command."
+              <> help
+                ( "Use an MCP server over stdio.  May be passed multiple times."
+                    ++ "  Accepts a POSIX shell command."
+                )
           )
       )
     <*> many
@@ -39,10 +43,24 @@ parser =
           ( long "mcp-http"
               <> short 'M'
               <> metavar "SPEC"
-              <> help "Use an MCP server over HTTP.  May be passed multiple times.  See the wiki for accepted syntax."
+              <> help
+                ( "Use an MCP server over HTTP.  May be passed multiple times."
+                    ++ "  See the wiki for accepted syntax."
+                )
           )
       )
     <*> parserPromptOption
+    <*> optional
+      ( strOption
+          ( long "system"
+              <> short 's'
+              <> metavar "SPEC"
+              <> help
+                ( "Pre-load a system prompt.  If SPEC doesn't contain a `/`, it's treated as a name"
+                    ++ " in the prompt library, otherwise it's treated as a file path."
+                )
+          )
+      )
 
 parserPromptOption :: Parser PromptOption
 parserPromptOption =

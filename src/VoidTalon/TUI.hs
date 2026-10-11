@@ -342,15 +342,7 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) = openPopup NReasoningE
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
-  let popupCtx =
-        PopupContext
-          { config = st.config,
-            connection = st.connection,
-            httpMan = st.httpMan,
-            evchan = st.evchan,
-            reasoning = RE.currentEffort st.reasoningEffort,
-            model = st.models.active
-          }
+  let popupCtx = statePopupContext st
   case effectiveFocus st of
     Just NErrorPopup -> case ev of
       (VtyEvent (V.EvKey V.KEsc [])) -> stateCurrentErrorL .= Nothing
@@ -558,6 +550,15 @@ handleAppEvent (EvAppendTimelineAndStart ents) = do
   stateTimelineEntriesL %= ((Timeline.mkNewDisplayEntry <$> ents) ++)
   zoom stateTimelineL Timeline.stickToBottom
   startCompletions
+handleAppEvent (EvAppendStartupSystemPrompt info) = do
+  st <- get
+  res <- PL.runPromptInTUI (PL.execInfoForContext $ statePopupContext st) info
+  case res of
+    Left e -> stateCurrentErrorL .= Just (show e)
+    Right res' -> do
+      stateTimelineEntriesL
+        %= ((Timeline.mkNewDisplayEntry $ Timeline.SystemEntry res') :)
+  zoom stateTimelineL Timeline.stickToBottom
 
 openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)
@@ -619,3 +620,14 @@ executeTool invoke =
     try invoke <&> \case
       Left err -> T.pack $ "Error: " <> (show (err :: SomeException))
       Right res -> Tools.postProcessToolOutput res
+
+statePopupContext :: State -> PopupContext
+statePopupContext st =
+  PopupContext
+    { config = st.config,
+      connection = st.connection,
+      httpMan = st.httpMan,
+      evchan = st.evchan,
+      reasoning = RE.currentEffort st.reasoningEffort,
+      model = st.models.active
+    }

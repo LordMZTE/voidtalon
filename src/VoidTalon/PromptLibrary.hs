@@ -6,6 +6,7 @@ module VoidTalon.PromptLibrary
     PromptInfo,
     ExecInfo (..),
     inspectPrompt,
+    inspectPromptFile,
     evalPrompt,
   )
 where
@@ -39,11 +40,15 @@ data ExecInfo = ExecInfo
     reasoning :: ReasoningEffort
   }
 
--- | Given a prompt name as returned by @listPrompts@, does an initial read of the prompt, building
--- the file path and checking if it is executable or not.
+-- | Like @inspectPromptFile@, but instead takes the config directory and the name of a prompt as
+-- returned by @listPrompts@.
 inspectPrompt :: FilePath -> String -> IO PromptInfo
-inspectPrompt dir name = do
-  let path = dir </> promptDirname </> name
+inspectPrompt dir name = inspectPromptFile $ dir </> promptDirname </> name
+
+-- | Given a path to a prompt template, does an initial read of the prompt, checking if it is
+-- executable or not.
+inspectPromptFile :: FilePath -> IO PromptInfo
+inspectPromptFile path = do
   perms <- getPermissions path
   pure (path, perms.executable)
 

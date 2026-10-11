@@ -36,6 +36,7 @@ import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config, ConnectionConfig)
 import VoidTalon.Net.Completions (ReasoningEffort, Update (UpdateMessage))
 import VoidTalon.Net.Models (ModelInfo)
+import qualified VoidTalon.PromptLibrary as PL
 import qualified VoidTalon.Timeline as Timeline
 import VoidTalon.Util (BufferedBChan, SemiSemigroup ((<>?)))
 
@@ -60,6 +61,8 @@ data Event
   | -- | Appends entries to the timeline, then starts completion.  Used by the CLI to add initial
     -- messages.  Entries are in reverse order, as per usual.
     EvAppendTimelineAndStart [Timeline.Entry]
+  | -- | Runs the given prompt template, then appends it as system prompt.  Use by the CLI
+    EvAppendStartupSystemPrompt PL.PromptInfo
 
 instance SemiSemigroup Event where
   -- Completion updates are of monoidal shape

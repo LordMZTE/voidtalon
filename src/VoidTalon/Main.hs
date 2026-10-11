@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module VoidTalon.Main (main) where
 
@@ -8,6 +9,7 @@ import Control.Exception.Base (SomeException)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text.Encoding as T
@@ -26,6 +28,7 @@ import qualified VoidTalon.CLI as CLI
 import qualified VoidTalon.Config as Config
 import qualified VoidTalon.Log as Log
 import qualified VoidTalon.Net.MCP as MCP
+import qualified VoidTalon.PromptLibrary as PL
 import qualified VoidTalon.TUI as TUI
 import qualified VoidTalon.Timeline as Timeline
 import qualified VoidTalon.Util as Util
@@ -59,12 +62,7 @@ mainWithLog = do
           startHTTPMCPServers httpMan args.mcpHttp
         ]
   chan <- Util.newBufferedBChan
-  initEvents <- case args.prompt of
-    CLI.PONone -> pure []
-    CLI.POText t -> pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry t]]
-    CLI.POFile path -> do
-      content <- BS.readFile path
-      pure [TUI.EvAppendTimelineAndStart [Timeline.PromptEntry $ T.decodeUtf8 content]]
+  initEvents <- getStartupEvents args configDir
   initState <-
     TUI.mkInitialState
       config
@@ -118,3 +116,23 @@ startHTTPMCPServers man = mapM startOne
       mcp <- MCP.connectHTTP man spec
       caps <- MCP.performInitialization mcp
       pure (mcp, caps)
+
+getStartupEvents :: CLI.Arguments -> FilePath -> IO [TUI.Event]
+getStartupEvents args configDir = catMaybes <$> sequence [systemEvent, promptEvent]
+  where
+    systemEvent :: IO (Maybe TUI.Event)
+    systemEvent =
+      sequence $
+        (fmap TUI.EvAppendStartupSystemPrompt . getStartupPromptSpec)
+          <$> args.system
+    getStartupPromptSpec :: FilePath -> IO PL.PromptInfo
+    getStartupPromptSpec spec =
+      if elem '/' spec
+        then PL.inspectPromptFile spec
+        else PL.inspectPrompt configDir spec
+    promptEvent = case args.prompt of
+      CLI.PONone -> pure Nothing
+      CLI.POText t -> pure . Just $ TUI.EvAppendTimelineAndStart [Timeline.PromptEntry t]
+      CLI.POFile path -> do
+        content <- BS.readFile path
+        pure . Just $ TUI.EvAppendTimelineAndStart [Timeline.PromptEntry $ T.decodeUtf8 content]

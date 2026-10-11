@@ -3,7 +3,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
-module VoidTalon.TUI.PromptLibrary (Library (), newLibrary, draw, handleEvent, onOpened) where
+module VoidTalon.TUI.PromptLibrary
+  ( Library (),
+    newLibrary,
+    draw,
+    handleEvent,
+    onOpened,
+    runPromptInTUI,
+    execInfoForContext,
+  )
+where
 
 import Brick
 import Brick.Widgets.Center (center)
@@ -77,17 +86,12 @@ handleEvent :: PopupContext -> BrickEvent Name e -> EventM Name Library ()
 handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
   liftIO $ Util.blockWriteBufferedBChan evchan EvClosePopup
 handleEvent
-  PopupContext
-    { evchan,
-      model,
-      connection,
-      reasoning
-    }
+  ctx@PopupContext {evchan}
   (VtyEvent (V.EvKey V.KEnter [])) = do
     st <- get
     case st.prompts >>= listSelectedElement of
       Just (_, LocalPrompt p) -> do
-        let execInfo = PL.ExecInfo {model, connection = connection.name, reasoning}
+        let execInfo = execInfoForContext ctx
         res <- readPrompt st.configDir p execInfo
         case res :: Either SomeException T.Text of
           Left e -> liftIO $ Util.blockWriteBufferedBChan evchan $ EvError $ show e
@@ -96,16 +100,8 @@ handleEvent
       Just (_, MCPPrompt (_, content)) -> liftIO $ sendContents content
       Nothing -> pure ()
     where
-      readPrompt ::
-        (Ord n) =>
-        FilePath ->
-        String ->
-        PL.ExecInfo ->
-        EventM n s (Either SomeException T.Text)
-      readPrompt configDir name execInfo = do
-        info@(_, exec) <- liftIO $ PL.inspectPrompt configDir name
-        let f = if exec then suspendAndResume' else liftIO
-        f $ try $ PL.evalPrompt info execInfo
+      readPrompt configDir name =
+        ((liftIO $ PL.inspectPrompt configDir name) >>=) . runPromptInTUI
       sendContents :: T.Text -> IO ()
       sendContents content =
         Util.blockWriteBufferedBChanAllRev
@@ -141,3 +137,17 @@ onOpened evchan =
   gets (.prompts) >>= \case
     Just _ -> pure ()
     Nothing -> loadPrompts evchan
+
+runPromptInTUI ::
+  (Ord n) => PL.ExecInfo -> PL.PromptInfo -> EventM n s (Either SomeException T.Text)
+runPromptInTUI execInfo (info@(_, exec)) = go . try $ PL.evalPrompt info execInfo
+  where
+    go = if exec then suspendAndResume' else liftIO
+
+execInfoForContext :: PopupContext -> PL.ExecInfo
+execInfoForContext
+  PopupContext
+    { model,
+      connection,
+      reasoning
+    } = PL.ExecInfo {model, connection = connection.name, reasoning}
