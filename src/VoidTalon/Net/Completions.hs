@@ -27,6 +27,7 @@ import Network.HTTP.Client
     requestFromURI,
     withResponse,
   )
+import qualified Network.HTTP.Types as HTTP
 import Network.URI.Lens (uriPathLens)
 import System.FilePath ((</>))
 import VoidTalon.Config (ConnectionConfig (..), getHeaders)
@@ -55,7 +56,7 @@ perform evchan conf http ctx = do
         req'
           { method = "POST",
             requestBody = RequestBodyLBS $ mkCtxRequestBody ctx,
-            requestHeaders = getHeaders conf.headers
+            requestHeaders = (HTTP.hContentType, "application/json") : getHeaders conf.headers
           }
   withResponse req http handleResponse
   where
