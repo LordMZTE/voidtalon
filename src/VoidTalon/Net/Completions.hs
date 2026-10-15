@@ -21,10 +21,11 @@ import Lens.Micro
 import Network.HTTP.Client
   ( BodyReader,
     Manager,
-    Request (method, requestBody, requestHeaders),
+    Request (method, requestBody, requestHeaders, responseTimeout),
     RequestBody (RequestBodyLBS),
     Response (responseBody),
     requestFromURI,
+    responseTimeoutNone,
     withResponse,
   )
 import qualified Network.HTTP.Types as HTTP
@@ -56,7 +57,8 @@ perform evchan conf http ctx = do
         req'
           { method = "POST",
             requestBody = RequestBodyLBS $ mkCtxRequestBody ctx,
-            requestHeaders = (HTTP.hContentType, "application/json") : getHeaders conf.headers
+            requestHeaders = (HTTP.hContentType, "application/json") : getHeaders conf.headers,
+            responseTimeout = responseTimeoutNone
           }
   withResponse req http handleResponse
   where
