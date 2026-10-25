@@ -16,14 +16,12 @@ where
 import Brick
 import Brick.Widgets.Border (vBorder)
 import Brick.Widgets.Center (center)
-import Brick.Widgets.List (List, handleListEventVi, list, listSelectedElement, renderList)
 import Control.Concurrent (ThreadId, forkFinally)
 import Control.Exception (catch)
 import Control.Exception.Base (SomeException)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Text as T
-import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
 import Lens.Micro (Traversal')
 import Lens.Micro.Mtl
@@ -31,7 +29,8 @@ import Lens.Micro.TH (makeLensesFor)
 import Network.HTTP.Client (Manager)
 import VoidTalon.Config (ConnectionConfig (..))
 import qualified VoidTalon.Net.Models as M
-import VoidTalon.TUI.Types (Event (..), Name (NModelSelector), PopupContext (..))
+import VoidTalon.TUI.FuzzyList
+import VoidTalon.TUI.Types (Event (..), Name (NModelSelector, NModelSelectorVP), PopupContext (..))
 import VoidTalon.Util (BufferedBChan)
 import qualified VoidTalon.Util as Util
 
@@ -41,9 +40,9 @@ data AvailableModels
   | -- | A request for available  models is ongoing
     AMInFlight ThreadId
   | -- | Models received from server
-    AMModels (List Name M.ModelInfo)
+    AMModels (FuzzyList Name M.ModelInfo)
 
-availableModelsModelsL :: Traversal' AvailableModels (List Name M.ModelInfo)
+availableModelsModelsL :: Traversal' AvailableModels (FuzzyList Name M.ModelInfo)
 availableModelsModelsL f = \case
   AMUnknown -> pure AMUnknown
   AMInFlight t -> pure (AMInFlight t)
@@ -84,33 +83,32 @@ handleEvent PopupContext {evchan} (VtyEvent (V.EvKey V.KEsc [])) =
 handleEvent _ (VtyEvent (V.EvKey V.KEnter [])) = do
   avail <- gets (.available)
   case avail of
-    AMModels ms -> case listSelectedElement ms of
-      Just (_, info) -> selectorActiveL .= Just info
+    AMModels ms -> case fuzzyListSelectedElement ms of
+      Just info -> selectorActiveL .= Just info
       Nothing -> pure ()
     _ -> pure ()
-handleEvent PopupContext {connection, httpMan, evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = do
-  avail <- gets (.available)
-  case avail of
-    AMInFlight _ -> pure ()
-    _ -> startModelRequest connection httpMan evchan
-handleEvent _ (VtyEvent ev) =
+handleEvent
+  PopupContext {connection, httpMan, evchan}
+  (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) = do
+    avail <- gets (.available)
+    case avail of
+      AMInFlight _ -> pure ()
+      _ -> startModelRequest connection httpMan evchan
+handleEvent _ ev = do
   zoom (selectorAvailableL . availableModelsModelsL) $
-    handleListEventVi (const $ pure ()) ev
-handleEvent _ _ = pure ()
+    handleFuzzyListEvent ev
 
 draw :: Selector -> Widget Name
 draw sel = hBox [modelList, vBorder, details]
   where
     modelList = hLimitPercent 50 $ case sel.available of
-      AMModels ms -> renderList renderModelEntry True ms
+      AMModels ms -> renderFuzzyList renderModelEntry ms
       AMUnknown -> center $ txt "Models Unknown"
       AMInFlight _ -> center $ txt "Models Loading..."
-    renderModelEntry _ M.ModelInfo {id = id', name} =
-      let dpy = fromMaybe id' name
-       in txt dpy
+    renderModelEntry _ _ = txt
     details = case sel.available of
-      AMModels ms -> case listSelectedElement ms of
-        Just (_, el) ->
+      AMModels ms -> case fuzzyListSelectedElement ms of
+        Just el ->
           vBox $
             catMaybes
               [ padBottom (Pad 1) . txtWrap <$> el.description,
@@ -145,11 +143,11 @@ startModelRequest con man chan = do
       Util.blockWriteBufferedBChan chan (EvModelList models)
       pure ()
 
-    exnHandler :: SomeException -> IO (Vec.Vector M.ModelInfo)
+    exnHandler :: SomeException -> IO [M.ModelInfo]
     exnHandler e = do
       -- we don't need to flush here because the caller will take care of that
       Util.writeBufferedBChan chan $ EvError $ show e
-      pure Vec.empty
+      pure []
 
 onOpened :: ConnectionConfig -> Manager -> BufferedBChan Event -> EventM Name Selector ()
 onOpened con man chan = do
@@ -159,8 +157,12 @@ onOpened con man chan = do
     _ -> pure ()
 
 -- | Invoked from TUI when we get an EvModelList
-modelsReceived :: (Vec.Vector M.ModelInfo) -> EventM Name Selector ()
-modelsReceived ms = (selectorAvailableL .=) . AMModels $ list NModelSelector ms 1
+modelsReceived :: [M.ModelInfo] -> EventM Name Selector ()
+modelsReceived ms =
+  (selectorAvailableL .=) . AMModels $
+    newFuzzyList NModelSelector NModelSelectorVP renderModel ms
+  where
+    renderModel M.ModelInfo {id = id', name} = fromMaybe id' name
 
 -- | Called when the connection changes with the new connection so we can invalidate our models.
 connectionChanged :: ConnectionConfig -> EventM Name Selector ()

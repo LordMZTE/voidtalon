@@ -16,13 +16,11 @@ where
 
 import Brick
 import Brick.Widgets.Center (center)
-import Brick.Widgets.List
 import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Text as T
-import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
 import Lens.Micro (_Just)
 import Lens.Micro.Mtl
@@ -34,6 +32,7 @@ import qualified VoidTalon.Net.MCP as MCP
 import qualified VoidTalon.PromptLibrary as PL
 import VoidTalon.TUI.Types (Event (..), Name (..), PopupContext (..), toolManagerToolTitleA)
 import qualified VoidTalon.Util as Util
+import VoidTalon.TUI.FuzzyList
 
 data Prompt = LocalPrompt String | MCPPrompt (T.Text, T.Text)
 
@@ -41,7 +40,7 @@ drawPrompt :: Prompt -> Widget n
 drawPrompt (LocalPrompt s) = str s
 drawPrompt (MCPPrompt (srv, _)) = withAttr toolManagerToolTitleA . txt $ "[MCP Instr.] " <> srv
 
-type PromptList = List Name Prompt
+type PromptList = FuzzyList Name Prompt
 
 data Library = Library
   { configDir :: FilePath,
@@ -72,8 +71,8 @@ newLibrary configDir mcps =
 draw :: Library -> Widget Name
 draw Library {configDir, prompts} = case prompts of
   Just ps
-    | Vec.null $ listElements ps -> noPromptsWidget
-    | otherwise -> renderList (const drawPrompt) True ps
+    | null $ fuzzyListEntries ps -> noPromptsWidget
+    | otherwise -> renderFuzzyList (\_ p _ -> drawPrompt p) ps
   Nothing -> unknownWidget
   where
     noPromptsWidget =
@@ -89,15 +88,15 @@ handleEvent
   ctx@PopupContext {evchan}
   (VtyEvent (V.EvKey V.KEnter [])) = do
     st <- get
-    case st.prompts >>= listSelectedElement of
-      Just (_, LocalPrompt p) -> do
+    case st.prompts >>= fuzzyListSelectedElement of
+      Just (LocalPrompt p) -> do
         let execInfo = execInfoForContext ctx
         res <- readPrompt st.configDir p execInfo
         case res :: Either SomeException T.Text of
           Left e -> liftIO $ Util.blockWriteBufferedBChan evchan $ EvError $ show e
           Right content ->
             liftIO $ sendContents content
-      Just (_, MCPPrompt (_, content)) -> liftIO $ sendContents content
+      Just (MCPPrompt (_, content)) -> liftIO $ sendContents content
       Nothing -> pure ()
     where
       readPrompt configDir name =
@@ -107,11 +106,10 @@ handleEvent
         Util.blockWriteBufferedBChanAllRev
           evchan
           [EvClosePopup, EvFillPromptEditor $ T.lines content]
-handleEvent PopupContext {evchan} (VtyEvent (V.EvKey (V.KChar 'r') [])) = loadPrompts evchan
-handleEvent _ (VtyEvent ev) =
+handleEvent PopupContext {evchan} (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) = loadPrompts evchan
+handleEvent _ ev =
   zoom (libraryPromptsL . _Just) $
-    handleListEventVi (const $ pure ()) ev
-handleEvent _ _ = pure ()
+    handleFuzzyListEvent ev
 
 loadPrompts :: Util.BufferedBChan Event -> EventM Name Library ()
 loadPrompts evchan = do
@@ -123,14 +121,16 @@ loadPrompts evchan = do
     Left e -> liftIO $ Util.blockWriteBufferedBChan evchan $ EvError $ show e
     Right ps -> do
       let ps' =
-            list
+            newFuzzyList
               NPromptLibrary
-              ( Vec.fromList $
-                  (MCPPrompt <$> mcpPrompts) ++ (LocalPrompt <$> ps)
-              )
-              1
+              NPromptLibraryVP
+              promptText
+              ( (MCPPrompt <$> mcpPrompts) ++ (LocalPrompt <$> ps))
       libraryPromptsL .= Just ps'
       pure ()
+  where
+    promptText (MCPPrompt (n, _)) = n
+    promptText (LocalPrompt t) = T.pack t
 
 onOpened :: Util.BufferedBChan Event -> EventM Name Library ()
 onOpened evchan =

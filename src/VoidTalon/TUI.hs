@@ -24,12 +24,12 @@ import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits ((.|.))
 import Data.Foldable (find)
+import Data.Functor (void)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Text.Zipper (breakLine, clearZipper, textZipper)
-import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
 import Lens.Micro hiding (folded)
 import Lens.Micro.Mtl
@@ -118,9 +118,9 @@ mkInitialState ::
   [MCP.Server] ->
   IO State
 mkInitialState config configDir evchan httpMan mcps = do
-  connection <- case config.connections Vec.!? 0 of
-    Just c -> pure c
-    Nothing -> fail "You must specify at least one connection in the config!"
+  connection <- case config.connections of
+    c : _ -> pure c
+    [] -> fail "You must specify at least one connection in the config!"
   pure $
     State
       { config,
@@ -327,26 +327,11 @@ handleEvent (VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl])) = do
     RunStateRunning thread -> do
       liftIO $ killThread thread
       stateRunStateL .= runStateCancelled
-handleEvent (VtyEvent (V.EvKey (V.KFun 1) [])) = openPopup NHelp
-handleEvent (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) = openPopup NToolManager
-handleEvent (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
-  st <- get
-  openPopup NModelSelector
-  zoom stateModelsL $ MS.onOpened st.connection st.httpMan st.evchan
-handleEvent (VtyEvent (V.EvKey (V.KChar 'f') [V.MCtrl])) = openPopup NConnectionSelector
-handleEvent (VtyEvent (V.EvKey (V.KChar 'l') [V.MCtrl])) = do
-  evchan <- gets (.evchan)
-  openPopup NPromptLibrary
-  zoom statePromptLibraryL $ PL.onOpened evchan
-handleEvent (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) = openPopup NReasoningEffort
 handleEvent (AppEvent evs) = sequence_ $ handleAppEvent <$> reverse evs
 handleEvent ev = do
   st <- get
   let popupCtx = statePopupContext st
   case effectiveFocus st of
-    Just NErrorPopup -> case ev of
-      (VtyEvent (V.EvKey V.KEsc [])) -> stateCurrentErrorL .= Nothing
-      _ -> pure ()
     Just NPromptField -> case ev of
       -- I would prefer if this were shift+enter rather than meta+enter, but that doesn't seem to be
       -- supported by vty.
@@ -365,52 +350,59 @@ handleEvent ev = do
           prompt' <- Util.editInEditor "md" prompt <|> pure prompt
           let ls = LT.toStrict <$> LT.split (== '\n') prompt'
           pure $ st & statePromptEditorL %~ (applyEdit $ const $ textZipper ls Nothing)
-      _ -> zoom statePromptEditorL $ handleEditorEvent ev
-    Just NTimelineVP -> case ev of
-      (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
-        let new = Util.focusAdd (length st.timeline.entries) st.timeline.focus
-        stateTimelineL . Timeline.stateFocusL .= new
-        makeVisible $ NTimelineEntry new
-        invalidateCache
-      (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
-        let new = Util.focusSub (length st.timeline.entries) st.timeline.focus
-        stateTimelineL . Timeline.stateFocusL .= new
-        makeVisible $ NTimelineEntry new
-        invalidateCache
-      (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
-        let idx = max 0 (st.timeline.focus)
-        stateTimelineEntriesL %= remove idx
-        -- We need to invalidate the cache because indices just shifted.
-        invalidateCache
-      (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
-        let focus = st.timeline.focus
-        suspendAndResume $
-          mapMOf
-            (stateTimelineEntriesL . ix focus . Timeline.displayEntryEntryL)
-            (liftIO . Timeline.editEntry)
-            st
-        invalidateCacheEntry $ NTimelineEntry focus
-      (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
-        -- tail of the timeline with the selected entry being the last one
-        let tl' = drop st.timeline.focus $ st ^. stateTimelineEntriesL
-        let tl =
-              -- Remove timeline entries from our tail until a prompt or tool result remains
-              dropWhile
-                ( \case
-                    (Timeline.DisplayEntry (Timeline.OutputEntry _) _) -> True
-                    _ -> False
-                )
-                tl'
+      _ -> do
+        handled <- handleEventNoPopup ev
+        unless handled . zoom statePromptEditorL $ handleEditorEvent ev
+    Just NTimelineVP -> do
+      case ev of
+        (VtyEvent (V.EvKey (V.KChar 'k') [])) -> do
+          let new = Util.focusAdd (length st.timeline.entries) st.timeline.focus
+          stateTimelineL . Timeline.stateFocusL .= new
+          makeVisible $ NTimelineEntry new
+          invalidateCache
+        (VtyEvent (V.EvKey (V.KChar 'j') [])) -> do
+          let new = Util.focusSub (length st.timeline.entries) st.timeline.focus
+          stateTimelineL . Timeline.stateFocusL .= new
+          makeVisible $ NTimelineEntry new
+          invalidateCache
+        (VtyEvent (V.EvKey (V.KChar 'd') [])) -> do
+          let idx = max 0 (st.timeline.focus)
+          stateTimelineEntriesL %= remove idx
+          -- We need to invalidate the cache because indices just shifted.
+          invalidateCache
+        (VtyEvent (V.EvKey (V.KChar 'e') [])) -> do
+          let focus = st.timeline.focus
+          suspendAndResume $
+            mapMOf
+              (stateTimelineEntriesL . ix focus . Timeline.displayEntryEntryL)
+              (liftIO . Timeline.editEntry)
+              st
+          invalidateCacheEntry $ NTimelineEntry focus
+        (VtyEvent (V.EvKey V.KEnter [])) -> when (isStopped st.runState) $ do
+          -- tail of the timeline with the selected entry being the last one
+          let tl' = drop st.timeline.focus $ st ^. stateTimelineEntriesL
+          let tl =
+                -- Remove timeline entries from our tail until a prompt or tool result remains
+                dropWhile
+                  ( \case
+                      (Timeline.DisplayEntry (Timeline.OutputEntry _) _) -> True
+                      _ -> False
+                  )
+                  tl'
 
-        -- If the rest the timeline is completely empty, we have nothing to work with.
-        unless (null tl) $ do
-          stateTimelineEntriesL .= tl
-          startCompletions
-        invalidateCache
-      (VtyEvent (V.EvKey (V.KChar '\t') [])) -> do
-        let focus = st.timeline.focus
-        stateTimelineEntriesL . ix focus . Timeline.displayEntryFoldedL %= not
-        invalidateCacheEntry $ NTimelineEntry focus
+          -- If the rest the timeline is completely empty, we have nothing to work with.
+          unless (null tl) $ do
+            stateTimelineEntriesL .= tl
+            startCompletions
+          invalidateCache
+        (VtyEvent (V.EvKey (V.KChar '\t') [])) -> do
+          let focus = st.timeline.focus
+          stateTimelineEntriesL . ix focus . Timeline.displayEntryFoldedL %= not
+          invalidateCacheEntry $ NTimelineEntry focus
+        _ -> void $ handleEventNoPopup ev
+    -- ==== Popups ====
+    Just NErrorPopup -> case ev of
+      (VtyEvent (V.EvKey V.KEsc [])) -> stateCurrentErrorL .= Nothing
       _ -> pure ()
     Just NToolManager -> zoom stateToolsL $ TM.handleEvent popupCtx ev
     Just NHelp -> Help.handleEvent popupCtx ev
@@ -449,7 +441,27 @@ handleEvent ev = do
               result <- executeTool invoke
               finishTool id' result rest
             _ -> pure ()
-    _ -> pure ()
+    _ -> void $ handleEventNoPopup ev
+
+handleEventNoPopup :: BrickEvent Name [Event] -> EventM Name State Bool
+handleEventNoPopup (VtyEvent (V.EvKey (V.KFun 1) [])) = True <$ openPopup NHelp
+handleEventNoPopup (VtyEvent (V.EvKey (V.KChar 't') [V.MCtrl])) =
+  True <$ openPopup NToolManager
+handleEventNoPopup (VtyEvent (V.EvKey (V.KChar 's') [V.MCtrl])) = do
+  st <- get
+  openPopup NModelSelector
+  zoom stateModelsL $ MS.onOpened st.connection st.httpMan st.evchan
+  pure True
+handleEventNoPopup (VtyEvent (V.EvKey (V.KChar 'f') [V.MCtrl])) =
+  True <$ openPopup NConnectionSelector
+handleEventNoPopup (VtyEvent (V.EvKey (V.KChar 'l') [V.MCtrl])) = do
+  evchan <- gets (.evchan)
+  openPopup NPromptLibrary
+  zoom statePromptLibraryL $ PL.onOpened evchan
+  pure True
+handleEventNoPopup (VtyEvent (V.EvKey (V.KChar 'r') [V.MCtrl])) =
+  True <$ openPopup NReasoningEffort
+handleEventNoPopup _ = pure False
 
 -- | Starts generation using the current timeline, if possible.
 -- If no model is selected, does nothing.

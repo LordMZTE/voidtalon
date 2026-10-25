@@ -31,7 +31,6 @@ import Brick (AttrName, Result, Size (Fixed), attrName)
 import Brick.Types (Widget (Widget))
 import Control.Concurrent (ThreadId)
 import qualified Data.Text as T
-import qualified Data.Vector as Vec
 import qualified Network.HTTP.Client as HTTP
 import VoidTalon.Config (Config, ConnectionConfig)
 import VoidTalon.Net.Completions (ReasoningEffort, Update (UpdateMessage))
@@ -50,7 +49,7 @@ data Event
   | -- | The currently open popup has signeled to be closed
     EvClosePopup
   | -- | The server answered a query to the models endpoint
-    EvModelList (Vec.Vector ModelInfo)
+    EvModelList [ModelInfo]
   | -- | An error has happened, display error popup
     EvError String
   | -- | The current connection is changed by the connection selector
@@ -77,11 +76,14 @@ instance SemiSemigroup Event where
 
 data Name
   = NConnectionSelector
+  | NConnectionSelectorVP
   | NErrorPopup
   | NHelp
   | NModelSelector
+  | NModelSelectorVP
   | NPromptField
   | NPromptLibrary
+  | NPromptLibraryVP
   | NReasoningEffort
   | NTimelineEntry Int
   | NTimelineVP

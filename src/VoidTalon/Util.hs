@@ -15,7 +15,6 @@ module VoidTalon.Util
     blockWriteBufferedBChan,
     focusAdd,
     focusSub,
-    parseTomlVector,
     writeBufferedBChanAllRev,
     blockWriteBufferedBChanAllRev,
     spacerWidget,
@@ -35,7 +34,6 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.IO as LT
-import qualified Data.Vector as Vec
 import Graphics.Vty (currentAttr)
 import Graphics.Vty.Image (charFill)
 import System.Directory (getTemporaryDirectory, removeFile)
@@ -43,7 +41,6 @@ import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import System.Process (callProcess)
 import System.Random.Stateful (globalStdGen, randomRM)
-import qualified Toml.Schema as T
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text.Lazy.Encoding as LT
 
@@ -169,11 +166,6 @@ focusSub ::
 focusSub tot sel = case sel - 1 of
   n | n < 0 -> tot - 1
   n -> n
-
--- | Parses a TOML value as a vector.
--- Parsing works the same as for a list.
-parseTomlVector :: (T.FromValue a) => T.Value' l -> T.Matcher l (Vec.Vector a)
-parseTomlVector v = Vec.fromList <$> T.fromValue v
 
 -- | Create a widget that takes up given width and height and renders as background.
 spacerWidget :: (Integral n) => n -> n -> Widget m

@@ -6,7 +6,6 @@ module VoidTalon.Net.Models (ModelInfo (..), Pricing (..), list) where
 import Control.Monad (join)
 import Data.Aeson
 import Data.Text as T
-import qualified Data.Vector as Vec
 import Lens.Micro
 import Network.HTTP.Client
   ( Manager,
@@ -55,7 +54,7 @@ instance FromJSON ModelInfo where
       <*> v .:? "pricing"
       <*> (v .:? "reasoning" >>= (fmap join . mapM (.:? "supported_efforts")))
 
-newtype ListResponse = ListResponse (Vec.Vector ModelInfo)
+newtype ListResponse = ListResponse [ModelInfo]
 
 instance FromJSON ListResponse where
   parseJSON = withObject "ListResponse" $ \v ->
@@ -64,7 +63,7 @@ instance FromJSON ListResponse where
 list ::
   ConnectionConfig ->
   Manager ->
-  IO (Vec.Vector ModelInfo)
+  IO [ModelInfo]
 list conf man = do
   let endpoint = conf.base_url & uriPathLens %~ (</> "models")
   req' <- requestFromURI endpoint

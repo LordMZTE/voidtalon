@@ -17,7 +17,6 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Data.Vector as Vec
 import qualified Network.HTTP.Types as HTTP
 import Network.URI (URI, parseURI)
 import System.Directory (XdgDirectory (XdgConfig), getXdgDirectory)
@@ -25,17 +24,16 @@ import Toml
 import Toml.Schema
 import Toml.Schema.FromValue (typeError)
 import VoidTalon.Config.Example
-import VoidTalon.Util (parseTomlVector)
 
 data Config = Config
-  { connections :: (Vec.Vector ConnectionConfig)
+  { connections :: [ConnectionConfig]
   }
 
 instance FromValue Config where
   fromValue =
     parseTableFromValue $
       Config
-        <$> reqKeyOf "connections" parseTomlVector
+        <$> reqKey "connections"
 
 data ConnectionConfig = ConnectionConfig
   { name :: T.Text,
