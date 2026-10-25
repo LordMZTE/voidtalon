@@ -9,11 +9,11 @@ data Arguments = Arguments
   { config :: Maybe String,
     mcp :: [String],
     mcpHttp :: [MCP.HTTPConnectionSpec],
-    prompt :: PromptOption,
+    prompts :: [PromptOption],
     system :: Maybe FilePath
   }
 
-data PromptOption = PONone | POText T.Text | POFile FilePath
+data PromptOption = POText T.Text | POFile FilePath
 
 parser :: Parser Arguments
 parser =
@@ -49,7 +49,24 @@ parser =
                 )
           )
       )
-    <*> parserPromptOption
+    <*> many
+      ( ( POText
+            <$> strOption
+              ( long "prompt"
+                  <> short 'p'
+                  <> metavar "PROMPT_TEXT"
+                  <> help "Use this prompt, then start.  May be passed multiple times."
+              )
+        )
+          <|> ( POFile
+                  <$> strOption
+                    ( long "prompt-file"
+                        <> short 'P'
+                        <> metavar "PROMPT_FILE"
+                        <> help "Read a prompt from this file, then start.  May be passed multiple times."
+                    )
+              )
+      )
     <*> optional
       ( strOption
           ( long "system"
@@ -61,26 +78,6 @@ parser =
                 )
           )
       )
-
-parserPromptOption :: Parser PromptOption
-parserPromptOption =
-  ( POText
-      <$> strOption
-        ( long "prompt"
-            <> short 'p'
-            <> metavar "PROMPT_TEXT"
-            <> help "Use this prompt, then start."
-        )
-  )
-    <|> ( POFile
-            <$> strOption
-              ( long "prompt-file"
-                  <> short 'P'
-                  <> metavar "PROMPT_FILE"
-                  <> help "Read a prompt from this file, then start."
-              )
-        )
-    <|> pure PONone
 
 readArguments :: IO Arguments
 readArguments = execParser $ info (helper <*> parser) (fullDesc <> progDesc synopsis)

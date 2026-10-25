@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -118,21 +119,31 @@ startHTTPMCPServers man = mapM startOne
       pure (mcp, caps)
 
 getStartupEvents :: CLI.Arguments -> FilePath -> IO [TUI.Event]
-getStartupEvents args configDir = catMaybes <$> sequence [promptEvent, systemEvent]
-  where
-    systemEvent :: IO (Maybe TUI.Event)
-    systemEvent =
-      sequence $
-        (fmap TUI.EvAppendStartupSystemPrompt . getStartupPromptSpec)
-          <$> args.system
-    getStartupPromptSpec :: FilePath -> IO PL.PromptInfo
-    getStartupPromptSpec spec =
-      if elem '/' spec
-        then PL.inspectPromptFile spec
-        else PL.inspectPrompt configDir spec
-    promptEvent = case args.prompt of
-      CLI.PONone -> pure Nothing
-      CLI.POText t -> pure . Just $ TUI.EvAppendTimelineAndStart [Timeline.PromptEntry t]
-      CLI.POFile path -> do
-        content <- BS.readFile path
-        pure . Just $ TUI.EvAppendTimelineAndStart [Timeline.PromptEntry $ T.decodeUtf8 content]
+getStartupEvents args configDir = do
+  systemEvent <-
+    sequence $
+      ( \spec -> do
+          info <-
+            if elem '/' spec
+              then PL.inspectPromptFile spec
+              else PL.inspectPrompt configDir spec
+          pure $ TUI.EvAppendStartupSystemPrompt info
+      )
+        <$> args.system
+
+  promptEvent <-
+    case args.prompts of
+      [] -> pure Nothing
+      _ ->
+        (Just . TUI.EvAppendTimelineAndStart . reverse)
+          <$> catMaybes
+          <$> mapM
+            ( \case
+                CLI.POText t -> pure (Just (Timeline.PromptEntry t))
+                CLI.POFile path -> do
+                  content <- BS.readFile path
+                  pure (Just (Timeline.PromptEntry (T.decodeUtf8 content)))
+            )
+            args.prompts
+
+  pure $ catMaybes $ [promptEvent, systemEvent]
