@@ -125,7 +125,7 @@ instance ToJSONEncoding Context where
       encodeEntry (Timeline.OutputEntry (LLMMessage {reasoning, content, toolCalls})) =
         pairs $
           mconcat
-            [ "role" .= ("user" :: T.Text),
+            [ "role" .= ("assistant" :: T.Text),
               "reasoning_content" .= reasoning,
               "content" .= content,
               pair "tool_calls" $ list encodeToolCall (IntMap.elems toolCalls)
