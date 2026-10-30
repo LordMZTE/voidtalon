@@ -5,6 +5,7 @@ module VoidTalon.TUI.Timeline
   ( DisplayEntry (..),
     displayEntryEntryL,
     displayEntryFoldedL,
+    displayEntryFinishedL,
     mkNewDisplayEntry,
     State (..),
     initialState,
@@ -47,17 +48,21 @@ import VoidTalon.Util (editInEditor)
 
 data DisplayEntry = DisplayEntry
   { entry :: TL.Entry,
-    folded :: Bool
+    folded :: Bool,
+    -- | Relevant for output entries: True iff the message has been fully generated.
+    -- This is used for deferred Markdown rendering.
+    finished :: Bool
   }
 
 makeLensesFor
   [ ("entry", "displayEntryEntryL"),
-    ("folded", "displayEntryFoldedL")
+    ("folded", "displayEntryFoldedL"),
+    ("finished", "displayEntryFinishedL")
   ]
   ''DisplayEntry
 
 mkNewDisplayEntry :: TL.Entry -> DisplayEntry
-mkNewDisplayEntry ent = DisplayEntry ent False
+mkNewDisplayEntry ent = DisplayEntry ent False False
 
 data State = State
   { -- | Index of the element in the timeline that's focused.  Starts from the bottom.
@@ -82,23 +87,31 @@ messageWidget :: Widget n -> Widget n
 -- This double padding is to align the widget to the right and provide spacing on the left.
 messageWidget = padLeft Max . padLeft messagePadding . border
 
-entryWidget :: Bool -> DisplayEntry -> Widget TT.Name
-entryWidget sel DisplayEntry {entry = TL.SystemEntry p} =
+entryWidget ::
+  -- | Defer markdown rendering until message is finished?
+  Bool ->
+  -- | Widget selected?
+  Bool ->
+  DisplayEntry ->
+  Widget TT.Name
+entryWidget _ sel DisplayEntry {entry = TL.SystemEntry p} =
   applyWhen sel (withAttr selectedA) inner
   where
     inner =
       overrideAttr borderAttr systemPromptBorderA
         . messageWidget
         $ markdownWidget "system-prompt" p
-entryWidget sel DisplayEntry {entry = TL.PromptEntry p} =
+entryWidget _ sel DisplayEntry {entry = TL.PromptEntry p} =
   applyWhen sel (withAttr selectedA) inner
   where
     inner = messageWidget $ markdownWidget "user-prompt" p
 entryWidget
+  deferMarkdown
   sel
   DisplayEntry
     { entry = TL.OutputEntry (TL.LLMMessage reasoning reply toolCalls),
-      folded
+      folded,
+      finished
     } =
     applyWhen sel (withAttr selectedA) inner
     where
@@ -111,8 +124,14 @@ entryWidget
       reasoningWidget =
         if folded
           then withAttr foldedReasoningA $ txt "[Reasoning]"
-          else borderWithLabel (txt "Reasoning") $ markdownWidget "reasoning" $ reasoning
-      replyWidget = markdownWidget "reply" reply
+          else
+            borderWithLabel (txt "Reasoning") $
+              ( if shouldRenderMarkdown
+                  then markdownWidget "reasoning"
+                  else txtWrap
+              )
+                reasoning
+      replyWidget = (if shouldRenderMarkdown then markdownWidget "reply" else txtWrap) reply
 
       toolsWidget Tools.Call {id = _, name, parameters} =
         hCenter $
@@ -120,7 +139,8 @@ entryWidget
             highlightedCode jsonSyntax parameters
 
       jsonSyntax = SL.defaultSyntaxMap Map.! "JSON"
-entryWidget sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}, folded} =
+      shouldRenderMarkdown = not deferMarkdown || finished
+entryWidget _ sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}, folded} =
   applyWhen sel (forceAttr selectedA) inner
   where
     inner =
@@ -129,11 +149,13 @@ entryWidget sel DisplayEntry {entry = TL.ToolResultEntry {id = _, content}, fold
         else overrideAttr borderAttr toolResultBorderA $ messageWidget $ txtWrap content
 
 draw ::
+  -- | True iff markdown rendering should be deferred
+  Bool ->
   -- | True iff the timeline is currently focused
   Bool ->
   State ->
   Widget TT.Name
-draw focused State {focus, entries} =
+draw deferMarkdown focused State {focus, entries} =
   withVScrollBars OnRight
     . viewport NTimelineVP Vertical
     . vBox
@@ -142,7 +164,7 @@ draw focused State {focus, entries} =
       ( \(l, n) e ->
           ( ( reportExtent (NTimelineEntry n)
                 . cached (NTimelineEntry n)
-                $ entryWidget (focused && n == focus) e
+                $ entryWidget deferMarkdown (focused && n == focus) e
             )
               : l,
             n + 1

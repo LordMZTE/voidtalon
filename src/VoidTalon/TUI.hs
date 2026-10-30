@@ -243,6 +243,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
           _ -> []
     output =
       Timeline.draw
+        st.config.deferMarkdown
         (effectiveFocus st == Just NTimelineVP)
         st.timeline
     prompt =
@@ -387,7 +388,7 @@ handleEvent ev = do
                 -- Remove timeline entries from our tail until a prompt or tool result remains
                 dropWhile
                   ( \case
-                      (Timeline.DisplayEntry (Timeline.OutputEntry _) _) -> True
+                      (Timeline.DisplayEntry {entry = (Timeline.OutputEntry _)}) -> True
                       _ -> False
                   )
                   tl'
@@ -520,7 +521,8 @@ handleAppEvent (EvCompletionUpdate (UpdateMessage added stats)) = do
         Timeline.stateEntriesL
           .= ( Timeline.DisplayEntry
                  { entry = Timeline.OutputEntry (prev <> added),
-                   folded = folded || foldReasoning
+                   folded = folded || foldReasoning,
+                   finished = False
                  }
              )
             : tl
@@ -547,6 +549,9 @@ handleAppEvent EvCompletionDone = do
       unless (st.runState == runStateCancelled || null toolCalls) $
         advanceTools (IntMap.elems toolCalls) >>= (statePendingToolsL .=)
     _ -> pure ()
+  -- Mark everything as finished
+  stateTimelineEntriesL . each . Timeline.displayEntryFinishedL .= True
+  invalidateCache
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing
 handleAppEvent (EvModelList ms) = zoom stateModelsL $ MS.modelsReceived ms
@@ -627,7 +632,7 @@ appendToolResult id' content = do
   let entry = Timeline.ToolResultEntry id' content
   zoom stateTimelineL $ do
     -- tool results start folded
-    Timeline.stateEntriesL %= (Timeline.DisplayEntry entry True :)
+    Timeline.stateEntriesL %= ((Timeline.mkNewDisplayEntry entry) {Timeline.folded = True} :)
     Timeline.stickToBottom
   invalidateCache -- index shift
 

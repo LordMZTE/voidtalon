@@ -26,7 +26,8 @@ import Toml.Schema.FromValue (typeError)
 import VoidTalon.Config.Example
 
 data Config = Config
-  { connections :: [ConnectionConfig]
+  { connections :: [ConnectionConfig],
+    deferMarkdown :: Bool
   }
 
 instance FromValue Config where
@@ -34,6 +35,7 @@ instance FromValue Config where
     parseTableFromValue $
       Config
         <$> reqKey "connections"
+        <*> (fromMaybe False <$> optKey "deferMarkdown")
 
 data ConnectionConfig = ConnectionConfig
   { name :: T.Text,
