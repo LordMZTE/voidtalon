@@ -8,7 +8,11 @@ import qualified Data.Text as T
 exampleConfig :: T.Text
 exampleConfig =
   T.unlines
-    [ "# You can specify as many connections as you want, but you must have at least one.  The first",
+    [ "# You can set this to true to only render a message as markdown once it's finished generating.",
+      "# That improves performance.",
+      "deferMarkdown = false",
+      "",
+      "# You can specify as many connections as you want, but you must have at least one.  The first",
       "# connection will be the default that's active at startup.",
       "[[connections]]",
       "name = \"llama.cpp\" # Mandatory, Display name of the connection",
