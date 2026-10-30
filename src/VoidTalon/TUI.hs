@@ -249,7 +249,7 @@ draw st = overlays ++ [vBox [output, hBorder, (joinBorders prompt), statusBar]]
     prompt =
       withFocusRing
         st.focus
-        (\b e -> vLimit 8 $ renderEditor (txt . T.unlines) b e)
+        (\b e -> vLimit (min 8 . length $ getEditContents e) $ renderEditor (txt . T.unlines) b e)
         $ st.promptEditor
     statusBar = withAttr barA (statusBarLeft <+> padLeft Max statusBarRight)
     statusBarLeft =
