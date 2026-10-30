@@ -338,11 +338,13 @@ handleEvent ev = do
       (VtyEvent (V.EvKey V.KEnter [V.MMeta])) ->
         statePromptEditorL %= applyEdit breakLine
       (VtyEvent (V.EvKey V.KEnter [])) ->
-        appendEditorContent Timeline.PromptEntry >> startCompletions
+        appendEditorContent Timeline.PromptEntry >>= flip when startCompletions
       -- append prompt without starting with <M-a>
-      (VtyEvent (V.EvKey (V.KChar 'a') [V.MMeta])) -> appendEditorContent Timeline.PromptEntry
+      (VtyEvent (V.EvKey (V.KChar 'a') [V.MMeta])) ->
+        void $ appendEditorContent Timeline.PromptEntry
       -- append system prompt with <M-s>
-      (VtyEvent (V.EvKey (V.KChar 's') [V.MMeta])) -> appendEditorContent Timeline.SystemEntry
+      (VtyEvent (V.EvKey (V.KChar 's') [V.MMeta])) ->
+        void $ appendEditorContent Timeline.SystemEntry
       -- Invoke editor with <C-x>
       (VtyEvent (V.EvKey (V.KChar 'x') [V.MCtrl])) -> do
         let prompt = LT.intercalate "\n" . fmap LT.fromStrict . getEditContents $ st.promptEditor
@@ -576,12 +578,14 @@ openPopup :: Name -> EventM n State ()
 openPopup n = stateOpenPopupL %= (<|> Just n)
 
 -- | Takes the content of the prompt editor, gives it to the given function to create a timeline
--- entry, appends this entry to the timeline and clears the text editor.
-appendEditorContent :: (T.Text -> Timeline.Entry) -> EventM Name State ()
+-- entry, appends this entry to the timeline and clears the text editor. Returns 'True' if the
+-- prompt was non-empty and the entry was appended, 'False' otherwise.
+appendEditorContent :: (T.Text -> Timeline.Entry) -> EventM Name State Bool
 appendEditorContent mkEnt = do
   ed <- gets (.promptEditor)
   let prompt = T.intercalate "\n" $ getEditContents $ ed
-  unless (T.null prompt) $ do
+  let doAppend = not $ T.null prompt
+  when doAppend $ do
     -- append prompt to timeline
     zoom stateTimelineL $ do
       Timeline.stateEntriesL %= (Timeline.mkNewDisplayEntry (mkEnt prompt) :)
@@ -591,6 +595,7 @@ appendEditorContent mkEnt = do
     statePromptEditorL %= applyEdit clearZipper
 
     invalidateCache
+  pure doAppend
 
 toolDialogVPScroll :: ViewportScroll Name
 toolDialogVPScroll = viewportScroll NToolDialog
