@@ -550,7 +550,9 @@ handleAppEvent EvCompletionDone = do
         advanceTools (IntMap.elems toolCalls) >>= (statePendingToolsL .=)
     _ -> pure ()
   -- Mark everything as finished
-  stateTimelineEntriesL . each . Timeline.displayEntryFinishedL .= True
+  zoom stateTimelineL $ do
+    Timeline.stateEntriesL . each . Timeline.displayEntryFinishedL .= True
+    Timeline.stickToBottom
   invalidateCache
 handleAppEvent EvClosePopup =
   stateOpenPopupL .= Nothing
